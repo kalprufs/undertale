@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>405tale</title>
+<style>
+  @font-face {
+    font-family: "DeterminationMono";
+    src: url("font/DeterminationMonoWebRegular-Z5oq.ttf") format("truetype");
+  }
+  @font-face {
+    font-family: "RadioFill";
+    src: url("font/Radio-Fill.ttf") format("truetype");   /* put Radio-Fill.ttf in the "font" folder */
+  }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none;
+               -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; image-rendering: pixelated; touch-action: none; }
+
+  /* ---- phone controls (shown on touch screens) ---- */
+  #touch { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 5; touch-action: none; }
+  #touch.on { display: block; }
+  #touch.typing #stick, #touch.typing .tbtn { display: none; }
+  #stick { position: absolute; left: calc(env(safe-area-inset-left, 0px) + 4vmin); bottom: calc(env(safe-area-inset-bottom, 0px) + 6vmin);
+           width: clamp(120px, 32vmin, 200px); aspect-ratio: 1; border-radius: 50%; pointer-events: auto; touch-action: none;
+           background: rgba(255,255,255,.12); border: 3px solid rgba(255,255,255,.45); }
+  #nub { position: absolute; left: 50%; top: 50%; width: 42%; aspect-ratio: 1; border-radius: 50%;
+         background: rgba(255,255,255,.45); border: 3px solid rgba(255,255,255,.8); transform: translate(-50%, -50%); }
+  .tbtn { position: absolute; border-radius: 50%; pointer-events: auto; touch-action: none; display: flex; align-items: center;
+          justify-content: center; font: bold 32px "DeterminationMono", "Courier New", monospace; color: #fff;
+          background: rgba(255,255,255,.14); border: 3px solid rgba(255,255,255,.55); }
+  .tbtn.down { background: rgba(255,255,255,.45); }
+  #btnZ { right: calc(env(safe-area-inset-right, 0px) + 5vmin); bottom: calc(env(safe-area-inset-bottom, 0px) + 8vmin);
+          width: clamp(84px, 22vmin, 130px); height: clamp(84px, 22vmin, 130px); }
+  #btnX { right: calc(env(safe-area-inset-right, 0px) + 5vmin + clamp(84px, 22vmin, 130px) + 2vmin);
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 4vmin);
+          width: clamp(62px, 16vmin, 96px); height: clamp(62px, 16vmin, 96px); font-size: 26px; }
+  #btnOK { display: none; position: absolute; left: 50%; bottom: 8vmin; transform: translateX(-50%); pointer-events: auto;
+           padding: 14px 40px; border-radius: 12px; font: bold 28px "DeterminationMono", "Courier New", monospace;
+           color: #000; background: #ff0; border: 3px solid #fff; }
+  #touch.typing #btnOK { display: block; }
+  #rotate { display: none; position: fixed; left: 0; right: 0; top: 0; padding: 8px; text-align: center; z-index: 6;
+            font: 18px "DeterminationMono", "Courier New", monospace; color: #fff; background: rgba(0,0,0,.7); }
+  @media (orientation: portrait) { #touch.on ~ #rotate { display: block; } }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="touch">
+  <div id="stick"><div id="nub"></div></div>
+  <div class="tbtn" id="btnX">X</div>
+  <div class="tbtn" id="btnZ">Z</div>
+  <div id="btnOK">OK</div>
+</div>
+<div id="rotate" onclick="this.style.display='none'">Turn your phone sideways for the best view (tap to hide)</div>
+
+<script>
+/* ================= CONFIG (edit these) ================= */
+
+// Character sprites: rename to match your files
+const SPRITES = {
+  stand: {
+    down:  "sprites/standingdown.png",
+    up:    "sprites/standingup.png",
+    left:  "sprites/standingleft.png",
+    right: "sprites/standingright.png",
+  },
+  walk: {                                       // each sheet: 4 frames side by side
+    down:  "sprites/walkingdown.png",
+    up:    "sprites/walkingup.png",
+    left:  "sprites/walkingleft.png",
+    right: "sprites/walkingright.png",
+  },
+};
+
+const SPEED = 450;           // world px per second
+const FRAMES = 4;            // frames per walking sheet
+const FRAME_TIME = 0.12;     // seconds per frame
+const FADE_TIME = 0.25;      // seconds for each half of the fade between locations
+
+// Collision box at her feet (this is your "padding" from the walls)
+const FEET_W = 70, FEET_H = 30;
+
+// Which location the game starts in
+const START = "tale405";
+
+/* ---------- Music (put your songs in a "music" folder next to index.html) ----------
+   One song per place. Rename the files here to match yours.
+   Leave "" for no music in that place. Songs loop and fade between places. */
+const MUSIC = {
+  tale405: "music/405tale.mp3",     // 405 room (start)
+  school:  "music/school.mp3",      // school hallways
+  room114: "music/room114.mp3",     // room 114
+  kongzi:  "music/kongzi.mp3",      // kongzi room
+  boss:    "music/boss.mp3",        // boss fight (BOOK)
+  end:     "music/end.mp3",         // THE END screen
+};
+const MUSIC_VOLUME = 0.6;           // 0 to 1
+const MUSIC_FADE = 0.6;             // seconds to fade between songs
+
+
+/* ---------- School room borders (walkable space = union of these) ---------- */
+const schoolRooms = {
+  mainHall:     { x1: 2943.98, x2: 4063.93, y1: 1959.94, y2: 4040.00 },
+  leftHall:     { x1: 99.14,   x2: 2943.99, y1: 3239.99, y2: 3560.01 },
+  rightHall:    { x1: 4063.89, x2: 6784,    y1: 3240.04, y2: 3560.03 },
+  entranceHall: { x1: 3264.00, x2: 3744.00, y1: 4039.97, y2: 4840 },
+  hallToHigher: { x1: 3264.02, x2: 3743.97, y1: 840.17,  y2: 1960.93 },
+  higherHall:   { x1: 1503.83, x2: 5503.61, y1: 519.87,   y2: 839.99 },
+};
+
+/* ---------- Locations ----------
+   walkable : areas she can stand in      {x1,y1,x2,y2}
+   blockers : solid objects inside them   {x1,y1,x2,y2}
+   exits    : zones that send her to another location (also walkable)
+   zoom     : camera zoom for this location
+   spriteH  : how tall she is drawn here (world px)                    */
+const LOCATIONS = {
+  tale405: {
+    image: "405tale.png",              // 1683 x 1244
+    w: 1683, h: 1244,
+    zoom: "fit",                       // whole room always visible, no zoom-in, no camera follow
+    spriteH: 150,                      // her size in this room (smaller number = smaller her)
+    spawn: { x: 839, y: 1180, dir: "up" },
+    interact: [],                      // same format as room114
+    walkable: [
+      { x1: 263.34, x2: 1419.58, y1: 1054.01, y2: 1244 },
+    ],
+    blockers: [],
+    exits: [
+      // entrance to the next room: Deltarune school
+      { x1: 736.66, x2: 941.90, y1: 998.81, y2: 1054.01,
+        to: "school", spawn: { x: 3504, y: 4700, dir: "up" } },
+    ],
+  },
+
+  school: {
+    image: "deltarune_school.png",     // 6784 x 4840
+    w: 6784, h: 4840,
+    zoom: 0.5,
+    spriteH: 230,
+    spawn: { x: 3504, y: 4700, dir: "up" },
+    walkable: Object.values(schoolRooms),
+    blockers: [
+      // lobby couch (y2 = couch bottom 2999.6 minus FEET_H so her feet can reach its bottom edge)
+      { x1: 3173, x2: 3821, y1: 2464, y2: 2969.6 },
+    ],
+    // Standing characters that move slowly in place. Sheets: PNG with the frames side by side
+    // (frame positions are found automatically). x,y = where their FEET are, h = drawn height.
+    // frames = how many frames the sheet has. slots = (only needed when opening by double-click) how many equal
+    // slots the sheet is cut into, counting empty ones. solid:true = she can't walk through them.
+    npcs: [
+      { name: "mario",  image: "mario.png",  frames: 4, x: 2277, y: 590,  h: 292,
+        lines: wrapPages("Are you sure you want to go in there? People have been in there, and both their mental health and their class scores are down. I'm here to warn you, but go ahead.") },   // higher hall, left door
+      { name: "guy",    image: "guy.png",    frames: 2, slots: 4, x: 1288, y: 3315, h: 304,
+        lines: ["Wait, I know Chinese! " + "Bingqilin ".repeat(14).trim()] },   // left hall, next to the lockers
+      { name: "grinch", image: "grinch.png", frames: 4, x: 3497, y: 3085, h: 375,
+        lines: ["Shhh, I'm stealing their vending machine. It's the closest thing to Christmas here."] },   // in front of the couch
+      { name: "bear",   image: "bear.png",   frames: 2, slots: 4, x: 3920, y: 2689, h: 315,
+        lines: ["Are you new here? You know wearing a tie is mandatory at least once a week, right?"] },   // right of the couch
+      { name: "girl",   image: "girl.png",   frames: 4, x: 3980, y: 2808, h: 209,
+        lines: ["گفتی شیمی می‌خونی پس؟ اها؟ چینی؟"] },   // right of the couch
+      { name: "ness",   image: "ness.png",   frames: 2, slots: 4, x: 5247, y: 3330, h: 245,
+        lines: ["Friendly tip: always keep a copy of your documents. Always. Trust me."] },   // right hall, by the map
+    ],
+    // 45-degree cut at the LEFT END of the left hall (next to door 114): everything up-left of the line
+    // x + y = sum is blocked. Line goes from (99.14, 3560) up-right to (419.14, 3240).
+    // The lockers behind it are interactable (see "diagonal lockers" below).
+    slants: [
+      { sum: 3659.14, x1: 99.14, x2: 419.14, y1: 3240, y2: 3560 },
+    ],
+    interact: [
+      // lockers on the wall of the left hall (all share the same y). Locker 4 = the gap between 3 and 5.
+      { name: "locker 1", x1: 1668.00, x2: 1824.63, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["It's rude to peek into other people's lockers. Let's walk away."] },
+      { name: "locker 2", x1: 1506.13, x2: 1668.00, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["It's rude to peek into other people's lockers. Let's walk away."] },
+      { name: "locker 3", x1: 1346.91, x2: 1506.13, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["Li Laoshi's abandoned locker. There is still a mango juice inside. Legends say she once walked these halls, though nobody remembers when."] },
+      { name: "locker 4", x1: 1188.53, x2: 1346.91, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["Full of old HSK practice papers. Somebody really wanted that Level 4."] },
+      { name: "locker 5", x1: 1025.93, x2: 1188.53, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["It's stuck. Maybe it's stuck forever."] },
+      // lockers behind the 45-degree border (she can't step on it, but can talk to them)
+      { name: "diagonal lockers", x1: 99.14, x2: 419.14, y1: 2855.17, y2: 3560, sum: 3659.14, reach: 40,
+        lines: ["These lockers are at a weird angle. Nobody knows why. The architects stay silent."] },
+      // boards, fountain, map on the wall
+      { name: "board 1", x1: 2112.45, x2: 2566.07, y1: 2865.26, y2: 3159.15, reach: 90, lines: [
+        ...wrapPages("NOTICE: A welcome ceremony for the incoming 1405 class of Chinese language students will be held with the presence of professors and student organizations of the faculty."),
+        "* Time: Tuesday, 1405/09/10\n  (December 1, 2026)\n  11:40 - 12:55",
+        "* Location: Persian Gulf Hall,\n  Faculty of Foreign Languages\n  and Literature",
+      ] },
+      { name: "board 2", x1: 4577.39, x2: 5030.95, y1: 2848.88, y2: 3142.91, reach: 90, lines: [
+        ...wrapPages("NOTICE: The Confucius Institute at the University of Tehran will hold HSK Level 2 and Level 4 exams and the Intermediate HSK Speaking Test."),
+        "* Date: Saturday,\n  Aban 16, 1405\n  (November 7, 2026)",
+      ] },
+      { name: "drinking fountain", x1: 4191.66, x2: 4353.47, y1: 2983.36, y2: 3144.24, reach: 100, run: () => ask("* Oh, free water.\n  Want some?", ["Yes", "No"], sel => {
+          talk = { lines: fixLines(sel === 0 ? "You drink some water. Not the cold, fresh type. Just... water." : "You walk away thirsty."), i: 0, shown: 0 };
+        }) },
+      { name: "map", x1: 5345.20, x2: 6143.95, y1: 2858.35, y2: 3238.56, reach: 40, lines: ["Persian Gulf.", "And the same name written in so many other languages."] },
+      // lobby couch (in the main hall)
+      { name: "lobby couch", x1: 3173, x2: 3821, y1: 2464, y2: 2999.60, lines: [
+        "* Oh, the core of Zabanha.",
+        ...wrapPages("You are now truly one of us! We were too tired to add the Ping-Pong table."),
+        "* You'll see it soon enough\n  tho.",
+      ] },
+      // the second door in the higher hall: interaction only for now
+      { name: "door", x1: 5048.94, x2: 5312.83, y1: 81.34, y2: 512.08,
+        lines: [
+          "* The staff room.",
+          ...wrapPages("They are really nice people, though you'll get to know them soon enough."),
+        ] },
+    ],
+    exits: [
+      // door to room 114 (bottom extended to 3245 so it overlaps the left hall)
+      { x1: 567.99, x2: 831.95, y1: 2800.06, y2: 3245,
+        to: "room114", spawn: { x: 1053, y: 400, dir: "down" } },
+      // door to the kongzi room (bottom extended to 3245 so it overlaps the right hall)
+      { x1: 6327.74, x2: 6593.06, y1: 2800.57, y2: 3245,
+        to: "kongzi", spawn: { x: 713, y: 480, dir: "down" } },
+      // boss fight door (bottom extended to 530 so it overlaps the higher hall, which now starts at 519.87)
+      { x1: 1687.89, x2: 1952.13, y1: 80.18, y2: 530,
+        battle: true, spawn: { x: 1820, y: 700, dir: "down" } },
+      // black door = ENDING (asks "are you sure?"; bottom extended to 530 so it overlaps the hall)
+      { x1: 3328.59, x2: 3682.36, y1: 61.25, y2: 530, ending: true },
+    ],
+  },
+
+  room114: {
+    image: "114.png",                  // 1217 x 975
+    w: 1217, h: 975,
+    zoom: "fit",
+    spriteH: 170,                      // tweak to taste
+    spawn: { x: 1053, y: 400, dir: "down" },
+    // shown once, the first time she walks in
+    enter: [
+      "* Welcome to room 114!",
+      ...wrapPages("You're going to have a lot of classes here. Most Chinese classes are held in this room."),
+      ...wrapPages("This is where you'll meet people you love... and, well, other people too."),
+    ],
+    walkable: [
+      { x1: 10.01, x2: 1208.98, y1: 258.03, y2: 965.99 },
+    ],
+    // Characters standing in the classroom (same format as the school's npcs).
+    // x = centre of the drawn sprite, y = feet. hitX = where the solid box / Z-area is centred if that is
+    // not the sprite centre (the prof's pointer stick makes his sprite wider than his body).
+    npcs: [
+      { name: "prof",     image: "prof.png",     frames: 2, slots: 4, x: 285, y: 375, h: 285, hitX: 230, hitW: 150, lines: ["wo de mao..."] },
+      { name: "redboy",   image: "redboy.png",   frames: 4, x: 757, y: 572, h: 197, lines: ["* Cappuccino...\n  Cappuccino....\n  Cappuccino after 11am...."] },
+      { name: "blondboy", image: "blondboy.png", frames: 4, x: 372, y: 938, h: 201, lines: ["* I'm starving... T-T"] },
+      { name: "blueboy",  image: "blueboy.png",  frames: 4, x: 914, y: 925, h: 203, lines: ["* What's for lunch?"] },
+    ],
+    // Overlays = PNGs the same size as the room with ONLY the objects visible (rest transparent).
+    // Each band is a horizontal slice of the PNG (y1..y2). The slice is drawn OVER her while her feet Y is
+    // inside its zone's y1..y2 (= she is behind it, at any x); otherwise it is drawn UNDER her.
+    overlays: [
+      { image: "desk.png", bands: [
+        { y1: 0, y2: 975, zone: { x1: 301.85, x2: 801.32, y1: 258.94, y2: 355.05 } },      // teacher desk
+      ]},
+      { image: "student.png", bands: [
+        { y1: 0,     y2: 609.5, zone: { x1: 152.81, x2: 1036.41, y1: 466,    y2: 496.04 } },  // row 1
+        { y1: 609.5, y2: 753,   zone: { x1: 152.81, x2: 1036.41, y1: 617,    y2: 647 } },     // row 2
+        { y1: 753,   y2: 975,   zone: { x1: 152.81, x2: 1036.41, y1: 752.89, y2: 802 } },     // row 3
+      ]},
+    ],
+    blockers: [
+      // teacher desk: only the FRONT part blocks, so she can walk behind it
+      { x1: 311.01, x2: 767.10, y1: 355.05, y2: 417.90 },
+      // student desks: only the front part blocks (the strip behind each row is walkable).
+      // y2 is the desk bottom minus FEET_H so her feet can reach the desk's bottom edge.
+      // row 1
+      { x1: 155.89, x2: 344.97,  y1: 496.04, y2: 571.94 },
+      { x1: 494.87, x2: 684.98,  y1: 496.04, y2: 571.94 },
+      { x1: 824.95, x2: 1015.00, y1: 496.04, y2: 571.94 },
+      // row 2
+      { x1: 156.00, x2: 345.23,  y1: 647, y2: 723.06 },
+      { x1: 494.94, x2: 685.01,  y1: 647, y2: 723.06 },
+      { x1: 825.01, x2: 1014.98, y1: 647, y2: 723.06 },
+      // row 3
+      { x1: 155.89, x2: 344.97,  y1: 802, y2: 877.92 },
+      { x1: 494.87, x2: 684.98,  y1: 802, y2: 877.92 },
+      { x1: 824.95, x2: 1015.00, y1: 802, y2: 877.92 },
+    ],
+    // Z-key dialogue. Stand next to / facing the object and press Z.
+    // lines = pages of text (one page per entry, use \n for a 2nd line). reach = how far away she can be.
+    interact: [
+      { name: "teacher desk", x1: 311.01, x2: 767.10, y1: 213.96, y2: 417.90,
+        lines: ["Stacks of papers and one very suspicious red pen."] },
+      { name: "whiteboard", x1: 238.00, x2: 839.66, y1: 25.42, y2: 189.47, reach: 80,
+        lines: ["The board is full of Chinese characters. You understand none of them... yet."] },
+      { name: "clock", x1: 858.83, x2: 941.60, y1: 48.78, y2: 127.11, reach: 120,
+        lines: wrapPages("It's a clock. An object that seems to freeze time during TingLi classes.") },
+      { name: "wall notes", x1: 24.62, x2: 185.19, y1: 53.96, y2: 228.93, reach: 40,
+        lines: ["Schedules. Check often, rooms change without warning."] },
+      // student desks, row 1
+      { name: "student desk 1", x1: 155.89, x2: 344.97,  y1: 466.01, y2: 601.94, lines: wrapPages("Yeah, that's Professor Vafaei...") },
+      { name: "student desk 2", x1: 494.87, x2: 684.98,  y1: 466.01, y2: 601.94, lines: ["* ZzzzzZzzz"] },
+      { name: "student desk 3", x1: 824.95, x2: 1015.00, y1: 466.01, y2: 601.94, lines: ["* They seem to be busy\n  taking notes."] },
+      // row 2
+      { name: "student desk 4", x1: 156.00, x2: 345.23,  y1: 617.03, y2: 753.06, lines: ["* 一些年，一个人🎵", "* They seem to be singing\n  something in Chinese."] },
+      { name: "student desk 5", x1: 494.94, x2: 685.01,  y1: 617.03, y2: 753.06, lines: ["* My cat drinks Cappuccino."] },
+      { name: "student desk 6", x1: 825.01, x2: 1014.98, y1: 617.03, y2: 753.06, lines: ["There are Chinese words engraved here. You can't read them yet, try again in two years."] },
+      // row 3
+      { name: "student desk 7", x1: 155.89, x2: 344.97,  y1: 752.89, y2: 907.92, lines: ["A chair. And a table. Nothing more."] },
+      { name: "student desk 8", x1: 494.87, x2: 684.98,  y1: 752.89, y2: 907.92, lines: ["You sit on it. It's still warm.", "Then you quickly stand up the second it starts creaking under your weight."] },
+      { name: "student desk 9", x1: 824.95, x2: 1015.00, y1: 752.89, y2: 907.92, lines: ["* There's a broken chair.\n  You find a note on it.", "* \"Spanish Major was here.\""] },
+    ],
+    exits: [
+      // the door in this room leads back to the school
+      // (bottom extended to 262 so it overlaps the floor)
+      { x1: 970.98, x2: 1136.05, y1: 34.03, y2: 262,
+        to: "school", spawn: { x: 700, y: 3400, dir: "down" } },
+    ],
+  },
+
+  kongzi: {
+    image: "kongzi.png",               // 1428 x 1083
+    w: 1428, h: 1083,
+    zoom: "fit",
+    spriteH: 190,                      // tweak to taste
+    spawn: { x: 713, y: 480, dir: "down" },
+    // shown once, the first time she walks in
+    enter: [
+      ...wrapPages("The Confucius Institute is a bridge between the Chinese language and culture and the rest of the world."),
+      ...wrapPages("This is the library. It is the only library of the Confucius Institute in Iran."),
+      ...wrapPages("It's basically Chinese heaven. I think you'd love studying here."),
+    ],
+    walkable: [
+      { x1: 13.50, x2: 1414.22, y1: 345.80, y2: 1070.11 },
+    ],
+    // Overlay PNGs (same size as the room, only the object visible). Each is drawn OVER her while her
+    // feet are inside its zone (she is behind it), otherwise UNDER her.
+    overlays: [
+      { image: "book2.png", bands: [
+        { y1: 0, y2: 1083, zone: { x1: 12.92, x2: 469.00, y1: 429.02, y2: 756.24 } },        // fully behind
+      ]},
+      { image: "stand.png", bands: [
+        { y1: 0, y2: 1083, zone: { x1: 940.44, x2: 1414.01, y1: 463.99, y2: 767.89 } },      // fully behind
+      ]},
+      { image: "reception.png", bands: [
+        { y1: 0, y2: 1083, zone: { x1: 12.33, x2: 509.02, y1: 808.01, y2: 865.40 } },        // strip behind the counter
+      ]},
+      { image: "library desk.png", bands: [
+        { y1: 0, y2: 1083, zone: { x1: 999.97, x2: 1302.95, y1: 835.91, y2: 884.56 } },      // strip behind the desk
+      ]},
+    ],
+    blockers: [
+      // book2 + stand: she can walk BEHIND them (open from the top and the side), but a thin wall along
+      // the bottom edge stops her passing through from the front. (y2 = object bottom - FEET_H)
+      { x1: 12.92,  x2: 469.00,  y1: 724.24, y2: 726.24 },     // book2 front
+      { x1: 940.44, x2: 1414.01, y1: 735.89, y2: 737.89 },     // stand front
+      // reception + library desk: only the FRONT part blocks (the strip behind is walkable)
+      { x1: 12.93,  x2: 503.98,  y1: 865.40, y2: 1040.96 },    // reception
+      { x1: 999.97, x2: 1302.95, y1: 884.56, y2: 1035.27 },    // library desk
+    ],
+    // Z-key dialogue (same format as room114). Fill in the text later.
+    interact: [
+      { name: "book1",        x1: 13.87,  x2: 439.03,  y1: 43.94,  y2: 371.03,  cycle: ["* The True Story of Ah Q\n  - Lu Xun", "* Dream of the Red Chamber\n  - Cao Xueqin", "* Legend of Hua Mulan"] },
+      { name: "book2",        x1: 12.92,  x2: 469.00,  y1: 429.02, y2: 756.24,  cycle: ["* The Frog in the Well", "* Mr. Bazrafshan's old book.\n  It has a :( on it."] },
+      { name: "reception",    x1: 12.93,  x2: 503.98,  y1: 807.84, y2: 1070.96, lines: ["Reception. Ask here if you have any questions about the library."] },
+      { name: "stand",        x1: 940.44, x2: 1414.01, y1: 463.99, y2: 767.89,  cycle: ["* Journey to the West\n  - Wu Cheng'en", "* The Analects\n  - Confucius"] },
+      { name: "library desk", x1: 999.97, x2: 1302.95, y1: 837.99, y2: 1065.27, lines: ["The librarian is away. Probably stuck in a TingLi class."] },
+      { name: "stairs",       x1: 936.19, x2: 1413.95, y1: 20.62,  y2: 375.69,  lines: wrapPages("We have a Confucius Institute office on the 3rd floor. But that's for another game, for another day.") },
+    ],
+    exits: [
+      // the door in this room leads back to the school
+      // (bottom extended to 350 so it overlaps the floor)
+      { x1: 584.92, x2: 841.63, y1: 60.90, y2: 350,
+        to: "school", spawn: { x: 6460, y: 3400, dir: "down" } },
+    ],
+  },
+};
+
+/* ================= AUTO-WRAP =================
+   Every dialogue page is re-flowed so it always fits the box. Long text simply continues on the next page.
+   You can write plain text (no "* " and no \n needed). */
+function fixLines(arr) {
+  return [].concat(arr).flatMap(l => wrapPages(String(l).replace(/\s*\n\s*/g, " ").replace(/^\*\s*/, "").trim()));
+}
+function fixAllDialogue() {
+  for (const loc of Object.values(LOCATIONS)) {
+    if (loc.enter) loc.enter = fixLines(loc.enter);
+    for (const o of loc.interact || []) {
+      if (o.lines) o.lines = fixLines(o.lines);
+      if (o.cycle) o.cycle = o.cycle.map(c => fixLines(c));
+    }
+  }
+}
+
+/* ================= SETUP ================= */
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+function resize() { canvas.width = innerWidth; canvas.height = innerHeight; }
+addEventListener("resize", resize); resize();
+
+function loadImg(src) {
+  const img = new Image();
+  img.ready = false;
+  img.onload = () => (img.ready = true);
+  img.onerror = () => console.warn("Could not load image:", src);
+  img.src = src;
+  return img;
+}
+
+for (const loc of Object.values(LOCATIONS)) {
+  loc.bg = loadImg(loc.image);
+  for (const ov of loc.overlays || []) ov.img = loadImg(ov.image);
+}
+/* ---------- Standing characters (NPCs) ----------
+   A sheet = frames side by side. Frames are found automatically by looking for empty columns,
+   so the sheet may have extra empty space; `frames` tells the game how many there are. */
+const NPC_FRAME_TIME = 0.55;      // seconds per frame (bigger = slower)
+
+function detectFrames(img, n, npc) {
+  const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
+  const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0);
+  let d;
+  try { d = g.getImageData(0, 0, c.width, c.height).data; }
+  catch (e) {
+    // Opened by double-clicking index.html (file://): the browser forbids reading pixels.
+    // Fallback: cut the sheet into equal slots (npc.slots = total slots incl. empty ones, default = frames).
+    console.warn("NPC " + npc.name + ": can't scan pixels on file://, using equal slots. Run from a local server / GitHub Pages for auto-detect.");
+    const slots = npc.slots ?? n, w = img.width / slots;
+    return { frames: Array.from({ length: n }, (_, i) => ({ sx: Math.round(i * w), sw: Math.round(w) })), top: 0, bottom: img.height - 1 };
+  }
+  const col = new Array(c.width).fill(false);
+  let top = c.height, bottom = -1;
+  for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+    if (d[(y * c.width + x) * 4 + 3] > 10) { col[x] = true; if (y < top) top = y; if (y > bottom) bottom = y; }
+  }
+  if (bottom < 0) return null;
+  let runs = [];                                   // runs of non-empty columns
+  for (let x = 0; x < c.width; x++) if (col[x]) {
+    if (runs.length && runs[runs.length - 1].e === x - 1) runs[runs.length - 1].e = x; else runs.push({ s: x, e: x });
+  }
+  while (runs.length > n) {                        // too many pieces: join across the smallest gap
+    let k = 0, best = Infinity;
+    for (let i = 0; i < runs.length - 1; i++) { const gap = runs[i + 1].s - runs[i].e; if (gap < best) { best = gap; k = i; } }
+    runs.splice(k, 2, { s: runs[k].s, e: runs[k + 1].e });
+  }
+  if (runs.length < n) {                           // frames touch each other: split evenly
+    const s0 = runs[0].s, e0 = runs[runs.length - 1].e, w = (e0 - s0 + 1) / n;
+    runs = Array.from({ length: n }, (_, i) => ({ s: Math.round(s0 + i * w), e: Math.round(s0 + (i + 1) * w) - 1 }));
+  }
+  return { frames: runs.map(r => ({ sx: r.s, sw: r.e - r.s + 1 })), top, bottom };
+}
+
+for (const loc of Object.values(LOCATIONS)) {
+  for (const [i, n] of (loc.npcs || []).entries()) {
+    n.img = new Image(); n.info = null;
+    n.img.onload = () => { n.info = detectFrames(n.img, n.frames || 1, n); };
+    n.img.onerror = () => console.warn("Could not load image:", n.image);
+    n.img.src = n.image;
+    n.phase = i * 0.37;                            // so they don't all move in sync
+    // Z-key dialogue: stand next to them and press Z. Set lines: [...] on the character to change the text.
+    // (counts like any other interaction for the ending message)
+    (loc.interact = loc.interact || []).push({
+      name: n.name, x1: (n.hitX ?? n.x) - (n.hitW ? n.hitW * 0.67 : n.h * 0.3), x2: (n.hitX ?? n.x) + (n.hitW ? n.hitW * 0.67 : n.h * 0.3),
+      y1: n.y - n.h, y2: n.y, reach: n.reach ?? 25,
+      lines: n.lines ?? ["* (" + n.name + " - fill me in)"],
+    });
+  }
+}
+fixAllDialogue();
+function npcBox(n) {                               // solid box at their feet
+  const w = n.hitW ?? n.h * 0.45, cx = n.hitX ?? n.x;
+  return { x1: cx - w / 2, x2: cx + w / 2, y1: n.y - FEET_H, y2: n.y };
+}
+function drawNpc(n, t) {
+  if (!n.info) return;
+  const { frames, top, bottom } = n.info, k = Math.floor((t / NPC_FRAME_TIME) + n.phase * 10) % frames.length;
+  const f = frames[k], sh = bottom - top + 1, scale = n.h / sh, w = f.sw * scale;
+  ctx.drawImage(n.img, f.sx, top, f.sw, sh, n.x - w / 2, n.y - n.h, w, n.h);
+}
+let npcClock = 0;
+document.fonts.load("26px DeterminationMono");   // make sure the battle font is ready
+
+const still = {}, walk = {};
+for (const d of ["down", "up", "left", "right"]) {
+  still[d] = loadImg(SPRITES.stand[d]);
+  walk[d]  = loadImg(SPRITES.walk[d]);
+}
+
+const keys = {};
+let debug = false;
+addEventListener("keydown", e => {
+  // typing the name: the game ignores every key except Enter (typing goes to the hidden text box)
+  if (nameTyping) { if (e.key === "Enter" && !e.isComposing) finishName(); return; }
+  keys[e.key.toLowerCase()] = true;
+  if (!e.repeat) pressed[e.key.toLowerCase()] = true;
+  if (e.key.toLowerCase() === "g") debug = !debug;
+  // TEST KEY: press B in the world to start the boss fight (remove once you have a door)
+  if (e.key.toLowerCase() === "b" && mode === "world" && fade.state === "none" && !talk)
+    startBattle({ x: player.x, y: player.y, dir: player.dir });
+  if (e.key.startsWith("Arrow")) e.preventDefault();
+});
+addEventListener("keyup", e => (keys[e.key.toLowerCase()] = false));
+
+let cur = LOCATIONS[START];
+const player = { x: cur.spawn.x, y: cur.spawn.y, dir: cur.spawn.dir, moving: false, t: 0 };
+let camX = 0, camY = 0;
+let talk = null;   // active dialogue: { lines, i, shown }
+
+// fade between locations
+const fade = { state: "none", a: 0, exit: null };
+
+/* ================= COLLISION ================= */
+
+const walkAreas = () => [...cur.walkable, ...cur.exits];
+
+function pointWalkable(px, py) {
+  return walkAreas().some(r => px >= r.x1 && px <= r.x2 && py >= r.y1 && py <= r.y2);
+}
+
+function canStand(x, y) {
+  const l = x - FEET_W / 2, r = x + FEET_W / 2;
+  const t = y - FEET_H,     b = y;
+  if (!(pointWalkable(l, t) && pointWalkable(r, t) && pointWalkable(l, b) && pointWalkable(r, b))) return false;
+  for (const o of cur.blockers) {
+    if (r > o.x1 && l < o.x2 && b > o.y1 && t < o.y2) return false;
+  }
+  for (const n of cur.npcs || []) {
+    if (n.solid === false) continue;
+    const o = npcBox(n);
+    if (r > o.x1 && l < o.x2 && b > o.y1 && t < o.y2) return false;
+  }
+  // 45-degree borders: her top-left corner may not cross the line x + y = sum
+  for (const sl of cur.slants || []) {
+    if (r > sl.x1 && l < sl.x2 && b > sl.y1 && t < sl.y2 && (l + t) < sl.sum) return false;
+  }
+  return true;
+}
+
+/* ================= INTERACTION ================= */
+
+// how many interactions she has checked (across ALL rooms)
+function interactStats() {
+  let total = 0, seen = 0;
+  for (const loc of Object.values(LOCATIONS))
+    for (const o of loc.interact || []) { total++; if (o.seen) seen++; }
+  return { total, seen };
+}
+
+// Yes/No question in the dialogue box
+function ask(text, opts, cb, vertical) {
+  talk = { lines: [text], i: 0, shown: 0, choice: { opts, sel: 0, cb, vertical: !!vertical } };
+  player.moving = false; player.t = 0;
+}
+
+function askEnding(ex) {
+  ask("* Are you sure you want\n  to finish?", ["Yes", "No"], sel => {
+    if (sel === 1) { player.y = ex.y2 + 70; player.dir = "down"; return; }   // step back out of the door
+    const { total, seen } = interactStats();
+    let msg;
+    if (seen === 0)              msg = "* So why did you even play?";
+    else if (seen === total)     msg = "* Oh we got a pro gamer.";
+    else if (seen > total / 2)   msg = "* Are we sure we checked\n  everything? Good job tho!";
+    else                         msg = "* Oh so you're bored huh?";
+    talk = { lines: [msg], i: 0, shown: 0, onEnd: () => { mode = "end"; endT = 0; endPhase = 0; } };
+  });
+}
+
+const DIRV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+
+function tryInteract() {
+  const [vx, vy] = DIRV[player.dir];
+  const px = player.x + vx * 45, py = player.y - FEET_H / 2 + vy * 45;   // point in front of her
+  let best = null, bestD = Infinity;
+  for (const o of cur.interact || []) {
+    const ddx = Math.max(o.x1 - px, 0, px - o.x2), ddy = Math.max(o.y1 - py, 0, py - o.y2);
+    const d = Math.hypot(ddx, ddy);
+    // slanted objects: the point in front of her must also be close to the 45-degree line
+    if (o.sum !== undefined && px + py > o.sum + (o.reach ?? 20) * Math.SQRT2) continue;
+    if (d <= (o.reach ?? 20) && d < bestD) { best = o; bestD = d; }
+  }
+  if (!best) return;
+  if (best.run) { best.seen = true; best.run(best); return; }
+  if (best.cycle) {                                   // each press shows the next entry
+    best.seen = true; best.n = best.n || 0;
+    talk = { lines: best.cycle[best.n % best.cycle.length], i: 0, shown: 0 }; best.n++;
+    return;
+  }
+  if (best.lines && best.lines.length) { best.seen = true; talk = { lines: best.lines, i: 0, shown: 0 }; }
+}
+
+/* ================= GUIDE (the main NPC) =================
+   Files next to index.html: walkdown/walkup/walkleft/walkright.png (4 frames each)
+   and standdown/standup/standleft/standright.png.
+   When she walks into the main hall of the school for the first time she stops, the guide walks down
+   from the top, stands in front of her and talks. If she says Yes the guide follows her everywhere
+   (all rooms); if she says No the guide walks away to the door of room 114 and disappears. */
+const GUIDE = {
+  speed: 420,                    // walking speed in the cutscene
+  follow: 170,                   // how far (px along her path) the guide stays behind her when following
+  scale: 1.25,                   // size compared to her (1 = same height as her)
+  triggerY: 3800,                // she stops when her feet pass this Y in the school (main hall)
+  start: { x: 3060, y: 2200 },   // where the guide walks in from (the lane left of the couch, above the screen)
+  gap: 170,                      // how far in front of her the guide stops
+  leave: [{ x: 3060, y: 3420 }, { x: 700, y: 3420 }, { x: 700, y: 3250 }],   // way to the door of room 114
+};
+const gStill = {}, gWalk = {};
+for (const d of ["down", "up", "left", "right"]) { gStill[d] = loadImg("stand" + d + ".png"); gWalk[d] = loadImg("walk" + d + ".png"); }
+const guide = { mode: "hidden", x: 0, y: 0, dir: "down", moving: false, t: 0, idle: 0, path: [], onArrive: null, loc: null, trail: [], met: false };
+let lockInput = false;
+const locName = () => Object.keys(LOCATIONS).find(k => LOCATIONS[k] === cur);
+
+// cuts a text into dialogue pages: "* " on the first line, 3 lines per page, ~30 letters per line
+function wrapPages(text, width = 30, maxLines = 3) {
+  const lines = []; let line = "* ";
+  for (const w of text.split(" ")) {
+    if (line.trim().length > 1 && (line + w).length > width) { lines.push(line.trimEnd()); line = "  " + w + " "; }
+    else line += w + " ";
+  }
+  lines.push(line.trimEnd());
+  const pages = [];
+  for (let i = 0; i < lines.length; i += maxLines) {
+    const part = lines.slice(i, i + maxLines);
+    if (i > 0) part[0] = "* " + part[0].trimStart();            // a new page starts with "* " again
+    pages.push(part.join("\n"));
+  }
+  return pages;
+}
+function guideSay(texts, onEnd) {
+  const lines = [].concat(texts).flatMap(t => wrapPages(t));
+  talk = { lines, i: 0, shown: 0, onEnd };
+}
+function guideWalk(path, onArrive) {
+  guide.mode = "scripted"; guide.path = path.map(p => ({ ...p })); guide.onArrive = onArrive || null;
+}
+function guideDir(dx, dy) { guide.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); }
+
+function startIntro() {
+  guide.met = true; lockInput = true;
+  player.moving = false; player.t = 0; player.dir = "up";
+  guide.loc = "school"; guide.x = GUIDE.start.x; guide.y = GUIDE.start.y; guide.dir = "down";
+  const tx = player.x, ty = player.y - GUIDE.gap;
+  const path = [{ x: GUIDE.start.x, y: ty }, { x: tx, y: ty }];
+  guideWalk(path, () => { guide.dir = "down"; guideIntroTalk(); });
+}
+function guideIntroTalk() {
+  guideSay([
+    "Welcome to university! I'm really happy to see you here.",
+    "I'm going to guide you through the main parts of our university and Chinese language.",
+    "Sorry, this game looks wonky. We didn't have a lot of time, but let's have fun!",
+    "To the left is room 114.",
+    "To the right is the library.",
+    "At the top right is the university staff. They're on lunch break, but they're always on lunch break, so no worries.",
+    "And at the top left is a very hard boss fight. We hope you can win!",
+  ], () => ask("* Do you want me to\n  follow you?", ["Yes", "No"], sel => {
+    if (sel === 0) guideSay("Great! Let's go together!", () => { lockInput = false; startFollow(); });
+    else guideSay("Oh, good. I had a class to go to anyway.", () => {
+      lockInput = false;
+      guideWalk([{ x: GUIDE.leave[0].x, y: guide.y }, ...GUIDE.leave], () => { guide.mode = "gone"; });
+    });
+  }));
+}
+function startFollow() {
+  guide.mode = "follow"; guide.loc = locName(); guide.moving = false; guide.idle = 1;
+  guide.trail = [{ x: guide.x, y: guide.y }, { x: player.x, y: player.y }];
+}
+
+function updateGuide(dt) {
+  if (guide.mode === "scripted") {
+    let step = GUIDE.speed * dt; guide.moving = false;
+    while (step > 0 && guide.path.length) {
+      const t = guide.path[0], dx = t.x - guide.x, dy = t.y - guide.y, d = Math.hypot(dx, dy);
+      if (d > 0.01) { guideDir(dx, dy); guide.moving = true; }
+      if (d <= step) { guide.x = t.x; guide.y = t.y; guide.path.shift(); step -= d; }
+      else { guide.x += dx / d * step; guide.y += dy / d * step; step = 0; }
+    }
+    guide.t = guide.moving ? guide.t + dt : 0;
+    if (!guide.path.length) { guide.moving = false; const f = guide.onArrive; guide.onArrive = null; if (f) f(); }
+  } else if (guide.mode === "follow") {
+    const P = { x: player.x, y: player.y }, name = locName(), tr = guide.trail, last = tr[tr.length - 1];
+    // new room (or she was moved far away, e.g. after the fight): the guide steps out with her
+    if (guide.loc !== name || !last || Math.hypot(P.x - last.x, P.y - last.y) > 400) {
+      guide.loc = name; guide.trail = [P]; guide.x = P.x; guide.y = P.y; guide.moving = false; guide.idle = 1; return;
+    }
+    if (Math.hypot(P.x - last.x, P.y - last.y) >= 6) tr.push(P);
+    // the guide stands GUIDE.follow px behind her, measured along the path she walked
+    let ax = P.x, ay = P.y, rem = GUIDE.follow, tx = tr[0].x, ty = tr[0].y, at = 0;
+    for (let i = tr.length - 1; i >= 0; i--) {
+      const b = tr[i], d = Math.hypot(b.x - ax, b.y - ay);
+      if (d >= rem && d > 0) { const f = rem / d; tx = ax + (b.x - ax) * f; ty = ay + (b.y - ay) * f; at = i; break; }
+      rem -= d; ax = b.x; ay = b.y; at = 0;
+    }
+    if (at > 0) tr.splice(0, at);
+    const dx = tx - guide.x, dy = ty - guide.y;
+    if (Math.hypot(dx, dy) > 0.3) { guideDir(dx, dy); guide.idle = 0; } else guide.idle += dt;
+    guide.x = tx; guide.y = ty;
+    guide.moving = guide.idle < 0.1;
+    guide.t = guide.moving ? guide.t + dt : 0;
+  }
+}
+
+function drawGuide() {
+  const sheet = gWalk[guide.dir], idle = gStill[guide.dir];
+  let img, sx = 0, sw, sh;
+  if (guide.moving && sheet.ready) {
+    img = sheet; sw = sheet.width / FRAMES; sh = sheet.height;
+    sx = (Math.floor(guide.t / FRAME_TIME) % FRAMES) * sw;
+  } else if (idle.ready) { img = idle; sw = idle.width; sh = idle.height; }
+  if (img) {
+    const h = cur.spriteH * GUIDE.scale, w = h * (sw / sh);
+    ctx.drawImage(img, sx, 0, sw, sh, guide.x - w / 2, guide.y - h, w, h);
+  }
+}
+
+/* ================= PHONE CONTROLS =================
+   On touch screens: a joystick on the LEFT (walk / menus) and the Z (talk / confirm) and X (back) buttons
+   on the RIGHT. They simply press the same keys as the keyboard, so everything else works unchanged. */
+let touchOn = false;
+const touchEl = document.getElementById("touch");
+function showTouch() { if (!touchOn) { touchOn = true; touchEl.classList.add("on"); } }
+if (matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0) showTouch();
+addEventListener("pointerdown", e => { if (e.pointerType === "touch") showTouch(); }, { passive: true });
+addEventListener("contextmenu", e => { if (touchOn) e.preventDefault(); });
+
+// press a key like the keyboard would (held = keys[], one-tap = pressed[])
+function tkey(name, down) {
+  if (down && !keys[name]) pressed[name] = true;
+  keys[name] = down;
+}
+{
+  const stick = document.getElementById("stick"), nub = document.getElementById("nub");
+  let pid = null;
+  const setDirs = (l, r, u, d) => { tkey("arrowleft", l); tkey("arrowright", r); tkey("arrowup", u); tkey("arrowdown", d); };
+  function move(e) {
+    const b = stick.getBoundingClientRect(), R = b.width / 2;
+    let vx = e.clientX - (b.left + R), vy = e.clientY - (b.top + R);
+    const len = Math.hypot(vx, vy);
+    if (len > R) { vx *= R / len; vy *= R / len; }                 // keep the nub inside the circle
+    nub.style.transform = `translate(calc(-50% + ${vx}px), calc(-50% + ${vy}px))`;
+    const t = R * 0.3;                                              // small dead zone in the middle
+    setDirs(vx < -t, vx > t, vy < -t, vy > t);
+  }
+  function release() {
+    pid = null; nub.style.transform = "translate(-50%, -50%)"; setDirs(false, false, false, false);
+  }
+  stick.addEventListener("pointerdown", e => { pid = e.pointerId; stick.setPointerCapture(pid); move(e); e.preventDefault(); });
+  stick.addEventListener("pointermove", e => { if (e.pointerId === pid) move(e); });
+  stick.addEventListener("pointerup", e => { if (e.pointerId === pid) release(); });
+  stick.addEventListener("pointercancel", e => { if (e.pointerId === pid) release(); });
+
+  for (const [id, key] of [["btnZ", "z"], ["btnX", "x"]]) {
+    const el = document.getElementById(id);
+    el.addEventListener("pointerdown", e => { el.setPointerCapture(e.pointerId); el.classList.add("down"); tkey(key, true); e.preventDefault(); });
+    const up = () => { el.classList.remove("down"); tkey(key, false); };
+    el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
+  }
+  // OK button on the name screen (the phone keyboard's Enter key works too)
+  document.getElementById("btnOK").addEventListener("pointerdown", e => { finishName(); e.preventDefault(); });
+  // show/hide the typing layout
+  setInterval(() => touchEl.classList.toggle("typing", nameTyping), 100);
+}
+
+/* ================= WELCOME QUESTIONS (when the game starts) =================
+   Name -> how do you identify -> home or dorms -> the game starts.
+   Her answers are saved in `profile` (profile.name / profile.gender / profile.home). */
+const profile = { name: "", gender: "", home: "" };
+
+/* ================= INVENTORY (press X in the world) =================
+   maleOnly:true = only shown if she answered "Male" in the welcome questions. */
+const INV_FONT = "RadioFill, Tahoma, 'Segoe UI', Arial, sans-serif";
+const INVENTORY = [
+  { fa: "اصل دیپلم (موقت)" },
+  { fa: "شناسنامه (کپی)" },
+  { fa: "شناسنامه (اصل)" },
+  { fa: "کارت ملی (کپی)" },
+  { fa: "کارت ملی (اصل)" },
+  { fa: "عکس پرسنلی (۱۲ قطعه)" },
+  { fa: "ریزنمرات دیپلم" },
+  { fa: "کارت پایان خدمت یا معافیت تحصیلی (فقط توی کیف آقایون)" },
+];
+let invOpen = false, invSel = 0;
+const invItems = () => INVENTORY;
+document.fonts.load("24px RadioFill");
+let nameTyping = false;
+const nameInput = document.createElement("input");
+nameInput.type = "text"; nameInput.maxLength = 14; nameInput.autocomplete = "off"; nameInput.spellcheck = false;
+nameInput.style.cssText = "position:fixed;left:-300px;top:0;opacity:0;width:200px;font-size:16px;";
+document.body.appendChild(nameInput);
+for (const ev of ["pointerdown", "click", "touchend"]) addEventListener(ev, () => { if (nameTyping) nameInput.focus(); });
+
+function startWelcome() {
+  lockInput = true;
+  guideSay([
+    "Hello! Welcome to UT's FFLL!",
+    "University of Tehran, Faculty of Foreign Languages and Literature!",
+    "Congratulations on getting into the Chinese Language Major family!",
+    "Before you step in, we'd love to know a little about you.",
+  ], () => { nameTyping = true; nameInput.value = ""; nameInput.focus(); });
+}
+function finishName() {
+  const n = nameInput.value.trim();
+  if (!n) return;                                   // needs at least one letter
+  const low = n.toLowerCase().replace(/[^a-z\u0600-\u06ff ]/g, "").replace(/\s+/g, " ").trim();
+  const reask = text => { nameTyping = false; nameInput.blur(); guideSay(text, () => { nameTyping = true; nameInput.value = ""; nameInput.focus(); }); };
+  if (low.replace(/ /g, "") === "frisk") return reask("Oh, you know ball.");
+  const BAD_ANY = ["fuck", "shit", "bitch", "cunt"];              // blocked anywhere inside the name
+  const BAD_WORD = ["kir", "kos", "کیر", "کوس"];                   // blocked only as a whole word (so Kosar / Akira are fine)
+  if (BAD_ANY.some(w => low.replace(/ /g, "").includes(w)) || low.split(" ").some(w => BAD_WORD.includes(w))) return reask("Nope.");
+  profile.name = n; nameTyping = false; nameInput.blur();
+  guideSay("Nice to meet you, " + n + "! Just one more thing.", askHome);
+}
+function askGender() {
+  const opts = ["Female (she/her)", "Male (he/him)", "Non-binary (they/them)"];
+  ask("* How do you identify?", opts, sel => { profile.gender = opts[sel]; askHome(); }, true);
+}
+function askHome() {
+  const opts = ["Home", "Dorms"];
+  ask("* And where do you go back\n  to at night?", opts, sel => {
+    profile.home = opts[sel];
+    guideSay(["Great! Come on in, " + profile.name + ". You must be excited!", "Oh, and press X any time to check your bag."], () => { lockInput = false; });
+  }, true);
+}
+function drawNameEntry() {
+  const W = canvas.width, H = canvas.height, s = Math.min(W / 640, H / 480);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "rgba(0,0,0,.93)"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.font = `${30 * s}px DeterminationMono, 'Courier New', monospace`;
+  ctx.fillText("What's your name?", W / 2, H * 0.22);
+  ctx.font = `${48 * s}px DeterminationMono, 'Courier New', monospace`;
+  const blink = Math.floor(performance.now() / 500) % 2 === 0;
+  ctx.fillText(nameInput.value + (blink ? "_" : " "), W / 2, H * 0.42);
+  ctx.font = `${22 * s}px DeterminationMono, 'Courier New', monospace`;
+  ctx.fillStyle = nameInput.value.trim() ? "#ff0" : "#888";
+  ctx.fillText(touchOn ? "Tap the screen to type, then press OK" : "Press ENTER to confirm", W / 2, H * 0.66);
+  ctx.textAlign = "left";
+}
+startWelcome();
+
+/* ================= UPDATE ================= */
+
+function update(dt) {
+  if (!talk) npcClock += dt;                       // everybody freezes while a dialogue is open
+  updateGuide(dt);
+  // fade handling (input is frozen while fading)
+  if (fade.state === "out") {
+    fade.a += dt / FADE_TIME;
+    if (fade.a >= 1) {
+      fade.a = 1;
+      if (fade.exit.battle) { startBattle(fade.exit.spawn); fade.state = "none"; fade.a = 0; return; }
+      cur = LOCATIONS[fade.exit.to];
+      const s = fade.exit.spawn || cur.spawn;
+      player.x = s.x; player.y = s.y; player.dir = s.dir || "down";
+      player.moving = false; player.t = 0;
+      fade.state = "in";
+    }
+    updateCamera();
+    return;
+  }
+  if (fade.state === "in") {
+    fade.a -= dt / FADE_TIME;
+    if (fade.a <= 0) {
+      fade.a = 0; fade.state = "none";
+      if (cur.enter && !cur.entered) { cur.entered = true; talk = { lines: cur.enter, i: 0, shown: 0 }; }
+    }
+    updateCamera();
+    return;
+  }
+
+  // dialogue open: Z / Enter advances it, she can't move
+  if (talk) {
+    talk.shown += dt * 40;
+    const len = talk.lines[talk.i].length, ok = pressed.z || pressed.enter;
+    if (talk.choice && talk.i === talk.lines.length - 1 && talk.shown >= len) {
+      // Yes / No: left-right (or up-down) to pick, Z to confirm
+      const c = talk.choice, n = c.opts.length;
+      if (pressed.arrowleft || pressed.a || pressed.arrowup || pressed.w) c.sel = (c.sel + n - 1) % n;
+      if (pressed.arrowright || pressed.d || pressed.arrowdown || pressed.s) c.sel = (c.sel + 1) % n;
+      if (ok) { talk = null; c.cb(c.sel); }
+    } else if (ok) {
+      if (talk.shown < len) talk.shown = len;
+      else if (++talk.i >= talk.lines.length) { const end = talk.onEnd; talk = null; if (end) end(); }
+      else talk.shown = 0;
+    }
+    player.moving = false; player.t = 0;
+    updateCamera();
+    return;
+  }
+  // cutscene: she can't move until the guide has finished talking
+  if (lockInput) { player.moving = false; player.t = 0; updateCamera(); return; }
+  // inventory
+  if (invOpen) {
+    const n = invItems().length;
+    if (pressed.x || pressed.escape) invOpen = false;
+    if (pressed.arrowup || pressed.w) invSel = (invSel + n - 1) % n;
+    if (pressed.arrowdown || pressed.s) invSel = (invSel + 1) % n;
+    player.moving = false; player.t = 0; updateCamera(); return;
+  }
+  if (pressed.x) { invOpen = true; invSel = 0; player.moving = false; player.t = 0; updateCamera(); return; }
+  if (pressed.z || pressed.enter) { tryInteract(); if (talk) { updateCamera(); return; } }
+
+  let dx = 0, dy = 0;
+  if (keys["arrowleft"]  || keys["a"]) dx -= 1;
+  if (keys["arrowright"] || keys["d"]) dx += 1;
+  if (keys["arrowup"]    || keys["w"]) dy -= 1;
+  if (keys["arrowdown"]  || keys["s"]) dy += 1;
+
+  player.moving = false;
+  if (dx || dy) {
+    const len = Math.hypot(dx, dy);
+    const mx = (dx / len) * SPEED * dt;
+    const my = (dy / len) * SPEED * dt;
+
+    // move each axis separately so she slides along walls
+    if (mx && canStand(player.x + mx, player.y)) { player.x += mx; player.moving = true; }
+    if (my && canStand(player.x, player.y + my)) { player.y += my; player.moving = true; }
+
+    // facing direction (horizontal wins when moving diagonally)
+    if (dx)      player.dir = dx < 0 ? "left" : "right";
+    else if (dy) player.dir = dy < 0 ? "up" : "down";
+  }
+
+  player.t = player.moving ? player.t + dt : 0;
+
+  // first time she walks into the main hall of the school: the guide comes to meet her
+  if (!guide.met && cur === LOCATIONS.school && player.y <= GUIDE.triggerY) { startIntro(); updateCamera(); return; }
+
+  // stepping into an exit zone starts the transition
+  const fx = player.x, fy = player.y - FEET_H / 2;
+  for (const ex of cur.exits) {
+    if (fx >= ex.x1 && fx <= ex.x2 && fy >= ex.y1 && fy <= ex.y2 && !(ex.battle && bossDefeated)) {
+      if (ex.ending) { askEnding(ex); break; }
+      fade.state = "out"; fade.exit = ex;
+      break;
+    }
+  }
+
+  updateCamera();
+}
+
+// "fit" = scale so the whole background fits on screen; a number = fixed zoom
+const VIEW_MIN_W = 3000, VIEW_MIN_H = 1400;   // world pixels that must always be visible (matches a laptop at zoom 0.5)
+function zoomOf(loc) {
+  if (loc.zoom === "fit") return Math.min(canvas.width / loc.w, canvas.height / loc.h);
+  // fixed zoom, but on small screens (phones) zoom out so you see at least the same part of the map as on a laptop
+  return Math.min(loc.zoom, canvas.width / VIEW_MIN_W, canvas.height / VIEW_MIN_H);
+}
+
+function updateCamera() {
+  const z = zoomOf(cur);
+  const viewW = canvas.width / z, viewH = canvas.height / z;
+  const cx = player.x, cy = player.y - cur.spriteH / 2;
+  // follow her, clamped to the background; centered if the background is smaller than the screen
+  camX = viewW >= cur.w ? (cur.w - viewW) / 2 : Math.max(0, Math.min(cur.w - viewW, cx - viewW / 2));
+  camY = viewH >= cur.h ? (cur.h - viewH) / 2 : Math.max(0, Math.min(cur.h - viewH, cy - viewH / 2));
+}
+
+/* ================= DRAW ================= */
+
+function drawBand(img, b) {
+  const sx = img.width / cur.w, sy = img.height / cur.h;
+  ctx.drawImage(img, 0, b.y1 * sy, img.width, (b.y2 - b.y1) * sy, 0, b.y1, cur.w, b.y2 - b.y1);
+}
+
+function drawPlayer() {
+  const sheet = walk[player.dir], idle = still[player.dir];
+  let img, sx = 0, sw, sh;
+
+  if (player.moving && sheet.ready) {
+    img = sheet; sw = sheet.width / FRAMES; sh = sheet.height;
+    sx = (Math.floor(player.t / FRAME_TIME) % FRAMES) * sw;
+  } else if (idle.ready) {
+    img = idle; sw = idle.width; sh = idle.height;
+  }
+
+  if (img) {
+    const h = cur.spriteH, w = h * (sw / sh);
+    ctx.drawImage(img, sx, 0, sw, sh, player.x - w / 2, player.y - h, w, h);
+  }
+}
+
+function drawDebug() {
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(0,255,120,.9)";
+  for (const r of cur.walkable) ctx.strokeRect(r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1);
+  ctx.strokeStyle = "rgba(80,160,255,.95)";
+  for (const r of cur.exits) ctx.strokeRect(r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1);
+  ctx.strokeStyle = "rgba(255,60,60,.9)";
+  for (const o of cur.blockers) ctx.strokeRect(o.x1, o.y1, o.x2 - o.x1, o.y2 - o.y1);
+  for (const n of cur.npcs || []) { const o = npcBox(n); ctx.strokeRect(o.x1, o.y1, o.x2 - o.x1, o.y2 - o.y1); }
+  for (const sl of cur.slants || []) {                          // 45-degree borders
+    ctx.beginPath(); ctx.moveTo(sl.x1, sl.sum - sl.x1); ctx.lineTo(sl.x2, sl.sum - sl.x2); ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(200,80,255,.95)";                  // behind-zones
+  for (const ov of cur.overlays || []) for (const b of ov.bands)
+    if (b.zone) ctx.strokeRect(b.zone.x1, b.zone.y1, b.zone.x2 - b.zone.x1, b.zone.y2 - b.zone.y1);
+  ctx.strokeStyle = "rgba(255,160,0,.95)";                   // interaction areas
+  for (const o of cur.interact || []) ctx.strokeRect(o.x1, o.y1, o.x2 - o.x1, o.y2 - o.y1);
+  ctx.strokeStyle = "yellow";
+  ctx.strokeRect(player.x - FEET_W / 2, player.y - FEET_H, FEET_W, FEET_H);
+}
+
+function drawInventory() {
+  const W = canvas.width, H = canvas.height, s = Math.min(W / 640, H / 480), items = invItems();
+  const bw = 440 * s, rowH = 38 * s, bh = (96 + items.length * 38) * s;
+  const bx = (W - bw) / 2, by = (H - bh) / 2;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#000"; ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 5 * s; ctx.strokeRect(bx, by, bw, bh);
+  ctx.textBaseline = "top"; ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.direction = "ltr";
+  ctx.font = `${26 * s}px DeterminationMono, 'Courier New', monospace`;
+  ctx.fillText("INVENTORY", bx + 24 * s, by + 18 * s);
+  ctx.textAlign = "right"; ctx.direction = "rtl";
+  items.forEach((it, i) => {
+    const y = by + (66 * s) + i * rowH, on = i === invSel;
+    ctx.font = `${24 * s}px ${INV_FONT}`;
+    ctx.fillStyle = on ? "#ff0" : "#fff";
+    ctx.fillText(it.fa, bx + bw - 56 * s, y);
+    if (on) heart(bx + bw - 30 * s, y + 14 * s, 8 * s, "#f00");
+  });
+  ctx.direction = "ltr"; ctx.textAlign = "left"; ctx.fillStyle = "#888";
+  ctx.font = `${18 * s}px DeterminationMono, 'Courier New', monospace`;
+  ctx.fillText("X: close", bx + 24 * s, by + bh - 28 * s);
+}
+
+// Undertale-style dialogue box at the BOTTOM of the screen
+function drawDialogue() {
+  const W = canvas.width, H = canvas.height, s = Math.min(W / 640, H / 480);
+  const lastPage = talk.i === talk.lines.length - 1, vert = !!(talk.choice && talk.choice.vertical && lastPage);
+  const bw = 576 * s, bh = (vert ? 40 + (talk.lines[talk.i].split("\n").length + talk.choice.opts.length) * 32 : 130) * s;
+  const bx = (W - bw) / 2, by = H - bh - 24 * s;
+  ctx.fillStyle = "#000"; ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 5 * s; ctx.strokeRect(bx, by, bw, bh);
+  ctx.fillStyle = "#fff";
+  ctx.font = `${26 * s}px DeterminationMono, 'Courier New', monospace`;
+  ctx.textBaseline = "top"; ctx.textAlign = "left";
+  const full = talk.lines[talk.i];
+  full.slice(0, talk.shown | 0).split("\n")
+    .forEach((l, i) => ctx.fillText(l, bx + 20 * s, by + 20 * s + i * 32 * s));
+  if (talk.choice && talk.i === talk.lines.length - 1 && talk.shown >= full.length) {
+    const rows = full.split("\n").length, y = by + 20 * s + rows * 32 * s;
+    talk.choice.opts.forEach((o, k) => {
+      const x = bx + (vert ? 70 : 90 + k * 180) * s, yy = vert ? y + k * 32 * s : y;
+      ctx.fillStyle = "#fff"; ctx.fillText(o, x, yy);
+      if (k === talk.choice.sel) heart(x - 24 * s, yy + 13 * s, 8 * s, "#f00");
+    });
+  }
+}
+
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const z = zoomOf(cur);
+  ctx.setTransform(z, 0, 0, z, -camX * z, -camY * z);
+
+  if (cur.bg.ready) {
+    ctx.drawImage(cur.bg, 0, 0, cur.w, cur.h);
+  } else {
+    // placeholder if the background isn't found: show the walkable areas as gray blocks
+    ctx.fillStyle = "#222"; ctx.fillRect(0, 0, cur.w, cur.h);
+    ctx.fillStyle = "#555";
+    for (const r of walkAreas()) ctx.fillRect(r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1);
+  }
+
+  // overlay bands (objects): a band is drawn OVER whoever stands inside its zone (feet Y = behind it),
+  // otherwise UNDER everybody. This works for her and for the standing characters (npcs).
+  const bandsList = [];
+  for (const ov of cur.overlays || []) {
+    if (!ov.img || !ov.img.ready) continue;
+    for (const b of ov.bands) bandsList.push({ img: ov.img, b, done: false });
+  }
+  const actors = [{ y: player.y, draw: drawPlayer }];
+  for (const n of cur.npcs || []) actors.push({ y: n.y, draw: () => drawNpc(n, npcClock) });
+  const inZone = (e, y) => e.b.zone && y >= e.b.zone.y1 && y <= e.b.zone.y2;
+  for (const e of bandsList) {
+    if (!actors.some(a => inZone(e, a.y))) { drawBand(e.img, e.b); e.done = true; }
+  }
+  // characters + her, sorted by feet Y so whoever is lower on the screen is drawn in front
+  if ((guide.mode === "scripted" || guide.mode === "follow") && guide.loc === locName()) actors.push({ y: guide.y, draw: drawGuide });
+  actors.sort((a, b) => a.y - b.y);
+  actors.forEach((a, i) => {
+    a.draw();
+    // draw a band after the LAST actor (lowest on screen) standing in its zone, so all of them are behind it
+    for (const e of bandsList) {
+      if (e.done || !inZone(e, a.y)) continue;
+      if (!actors.slice(i + 1).some(o => inZone(e, o.y))) { drawBand(e.img, e.b); e.done = true; }
+    }
+  });
+  if (debug) drawDebug();
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (debug) {
+    ctx.fillStyle = "#fff"; ctx.font = "16px monospace";
+    ctx.fillText(`x:${player.x.toFixed(1)} y:${player.y.toFixed(1)}  (G = debug)`, 12, 24);
+  }
+  if (invOpen) drawInventory();
+  if (talk) drawDialogue();
+  if (nameTyping) drawNameEntry();
+  if (fade.a > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(1, fade.a)})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+/* ================= BOSS FIGHT =================
+   To start it from a door, add an exit to any location:
+   { x1, y1, x2, y2, battle: true, spawn: { x, y, dir } }
+   (spawn = where she stands after the fight) */
+const BOSS = {
+  name: "BOOK",
+  image: "book.png",
+  h: 220,                 // drawn height on the battle screen
+  hp: 120,                // boss HP
+  atk: 4,                 // damage per bullet hit (she has 20 HP)
+  encounter: "* Book blocks the way!",
+  check: "* BOOK - ATK 4 DEF 0\n* Its pages are full of secrets.",
+  talk: "* You read a page out loud.\n* Book seems calmer.",
+  flavor: ["* Book rustles its pages.", "* Book flutters in place.", "* Smells like old paper."],
+  win: "* YOU WON!\n* You earned 0 EXP and 0 gold.",
+  spare: "* You spared Book.",
+  notReady: "* Book isn't ready to be spared.",
+};
+const bossImg = loadImg(BOSS.image);
+const PMAX = 20;
+let mode = "world", B = null, bossDefeated = false, endT = 0;
+const pressed = {};
+
+function startBattle(back) {
+  B = { back, php: PMAX, bhp: BOSS.hp, phase: "menu", sel: 0, sub: [], subSel: 0, text: BOSS.encounter,
+        shown: 0, t: 0, bar: 0, timer: 0, dmg: 0, bullets: [], hx: 320, hy: 325, inv: 0, turn: 0,
+        calm: false, items: 2, spawnT: 0, won: false, next: "menu" };
+  mode = "battle";
+}
+function endBattle() {
+  if (B.won) bossDefeated = true;
+  const s = B.back;
+  player.x = s.x; player.y = s.y; player.dir = s.dir || "down"; player.moving = false; player.t = 0;
+  mode = "world"; fade.state = "in"; fade.a = 1;
+}
+function say(text, next) { B.text = text; B.shown = 0; B.phase = "say"; B.next = next || "dodge"; }
+function toMenu() { B.phase = "menu"; B.text = BOSS.flavor[B.turn % BOSS.flavor.length]; B.shown = 0; }
+function startDodge() { B.phase = "dodge"; B.timer = 6; B.bullets = []; B.spawnT = 0; B.hx = 320; B.hy = 325; B.inv = 0; }
+
+function updateBattle(dt) {
+  B.t += dt; B.shown += dt * 40; B.inv = Math.max(0, B.inv - dt);
+  const L = pressed.arrowleft || pressed.a, R = pressed.arrowright || pressed.d;
+  const U = pressed.arrowup || pressed.w,   D = pressed.arrowdown || pressed.s;
+  const ok = pressed.z || pressed.enter, back = pressed.x, ph = B.phase;
+
+  if (ph === "menu") {
+    if (L) B.sel = (B.sel + 3) % 4;
+    if (R) B.sel = (B.sel + 1) % 4;
+    if (ok) {
+      if (B.sel === 0) { B.phase = "attack"; B.bar = 0; }
+      else {
+        B.sub = [["Check", "Talk"], B.items > 0 ? ["Bandage x" + B.items] : [], ["Spare"]][B.sel - 1];
+        B.subSel = 0;
+        if (B.sub.length) B.phase = "sub"; else say("* You have no items.", "menu");
+      }
+    }
+  } else if (ph === "sub") {
+    if (U) B.subSel = (B.subSel + B.sub.length - 1) % B.sub.length;
+    if (D) B.subSel = (B.subSel + 1) % B.sub.length;
+    if (back) B.phase = "menu";
+    if (ok) {
+      const c = B.sub[B.subSel];
+      if (c === "Check") say(BOSS.check);
+      else if (c === "Talk") { B.calm = true; say(BOSS.talk); }
+      else if (c.startsWith("Bandage")) { B.items--; B.php = Math.min(PMAX, B.php + 10); say("* You used a Bandage.\n* HP restored."); }
+      else if (B.calm || B.bhp <= BOSS.hp * 0.3) { B.won = true; say(BOSS.spare, "end"); }
+      else say(BOSS.notReady);
+    }
+  } else if (ph === "say") {
+    if (ok) {
+      if (B.shown < B.text.length) B.shown = 999;
+      else if (B.next === "end") endBattle();
+      else if (B.next === "menu") toMenu();
+      else startDodge();
+    }
+  } else if (ph === "attack") {
+    B.bar += 520 * dt;
+    if (ok || B.bar > 536) {
+      B.dmg = B.bar > 536 ? 0 : Math.round(40 * (1 - Math.abs(B.bar - 268) / 268));
+      B.bhp = Math.max(0, B.bhp - B.dmg); B.timer = 1.2; B.phase = "hit";
+    }
+  } else if (ph === "hit") {
+    B.timer -= dt;
+    if (B.timer <= 0) { if (B.bhp <= 0) { B.won = true; say(BOSS.win, "end"); } else startDodge(); }
+  } else if (ph === "dodge") {
+    B.timer -= dt; B.spawnT -= dt;
+    const mx = (keys.arrowright || keys.d ? 1 : 0) - (keys.arrowleft || keys.a ? 1 : 0);
+    const my = (keys.arrowdown || keys.s ? 1 : 0) - (keys.arrowup || keys.w ? 1 : 0);
+    B.hx = Math.max(232, Math.min(408, B.hx + mx * 200 * dt));
+    B.hy = Math.max(272, Math.min(378, B.hy + my * 200 * dt));
+    if (B.spawnT <= 0) {
+      B.spawnT = 0.35;
+      if (B.turn % 2 === 0) B.bullets.push({ x: 226 + Math.random() * 180, y: 255, w: 14, h: 20, vx: 0, vy: 170 });
+      else { const l = Math.random() < 0.5; B.bullets.push({ x: l ? 215 : 420, y: 275 + Math.random() * 100, w: 20, h: 14, vx: l ? 200 : -200, vy: 0 }); }
+    }
+    for (const b of B.bullets) {
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      if (B.inv <= 0 && Math.abs(b.x + b.w / 2 - B.hx) < b.w / 2 + 6 && Math.abs(b.y + b.h / 2 - B.hy) < b.h / 2 + 6) { B.php -= BOSS.atk; B.inv = 1; }
+    }
+    B.bullets = B.bullets.filter(b => b.x > 200 && b.x < 440 && b.y < 400);
+    if (B.php <= 0) { B.phase = "dead"; B.text = "GAME OVER\n* Press Z"; B.shown = 999; }
+    else if (B.timer <= 0) { B.turn++; toMenu(); }
+  } else if (ph === "dead") {
+    if (ok) endBattle();
+  }
+}
+
+function heart(x, y, s, c) {
+  ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x, y + s * 0.9);
+  ctx.bezierCurveTo(x - s * 1.2, y + s * 0.1, x - s * 0.5, y - s * 0.6, x, y - s * 0.1);
+  ctx.bezierCurveTo(x + s * 0.5, y - s * 0.6, x + s * 1.2, y + s * 0.1, x, y + s * 0.9); ctx.fill();
+}
+
+function drawBattle() {
+  const W = canvas.width, H = canvas.height, s = Math.min(W / 640, H / 480);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  ctx.setTransform(s, 0, 0, s, (W - 640 * s) / 2, (H - 480 * s) / 2);
+  ctx.font = "26px DeterminationMono, 'Courier New', monospace"; ctx.textBaseline = "top"; ctx.textAlign = "left";
+  const ph = B.phase, dodge = ph === "dodge";
+
+  if (!B.won) {                                           // boss
+    const h = BOSS.h, w = bossImg.ready ? h * bossImg.width / bossImg.height : h;
+    const sx = ph === "hit" ? Math.sin(B.t * 60) * 8 * Math.min(1, B.timer) : 0, y = 30 + Math.sin(B.t * 2) * 6;
+    if (bossImg.ready) ctx.drawImage(bossImg, 320 - w / 2 + sx, y, w, h);
+    else { ctx.fillStyle = "#fff"; ctx.fillRect(320 - w / 2, y, w, h); }
+  }
+  if (ph === "hit") {                                     // boss hp + damage number
+    ctx.fillStyle = "#555"; ctx.fillRect(220, 8, 200, 14);
+    ctx.fillStyle = "#0f0"; ctx.fillRect(220, 8, 200 * B.bhp / BOSS.hp, 14);
+    ctx.fillStyle = "#f33"; ctx.textAlign = "center"; ctx.fillText(B.dmg ? B.dmg : "MISS", 320, 40); ctx.textAlign = "left";
+  }
+
+  const bx = dodge ? 220 : 32, bw = dodge ? 200 : 576;    // main box
+  ctx.fillStyle = "#000"; ctx.fillRect(bx, 260, bw, 130);
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 5; ctx.strokeRect(bx, 260, bw, 130);
+  ctx.fillStyle = "#fff";
+  const lines = t => String(t).split("\n").forEach((l, i) => ctx.fillText(l, 52, 282 + i * 32));
+  if (ph === "menu" || ph === "say" || ph === "dead") lines(B.text.slice(0, B.shown | 0));
+  if (ph === "sub") B.sub.forEach((o, i) => { ctx.fillText(o, 92, 282 + i * 32); if (i === B.subSel) heart(70, 295 + i * 32, 8, "#f00"); });
+  if (ph === "attack" || ph === "hit") {
+    ctx.lineWidth = 3; ctx.strokeRect(52, 290, 536, 70);
+    ctx.beginPath(); ctx.moveTo(320, 290); ctx.lineTo(320, 360); ctx.stroke();
+    ctx.fillRect(52 + B.bar - 4, 285, 8, 80);
+  }
+  if (dodge) {
+    ctx.save(); ctx.beginPath(); ctx.rect(222, 262, 196, 126); ctx.clip();
+    for (const b of B.bullets) ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.restore();
+    if (B.inv <= 0 || ((B.t * 20) | 0) % 2) heart(B.hx, B.hy, 10, "#f00");
+  }
+
+  ctx.fillStyle = "#fff"; ctx.fillText("CHARA  LV 1", 32, 398); ctx.fillText("HP", 300, 398);   // stats
+  ctx.fillStyle = "#c00"; ctx.fillRect(345, 398, 100, 22);
+  ctx.fillStyle = "#ff0"; ctx.fillRect(345, 398, 100 * Math.max(0, B.php) / PMAX, 22);
+  ctx.fillStyle = "#fff"; ctx.fillText(Math.max(0, B.php) + " / " + PMAX, 460, 398);
+  ["FIGHT", "ACT", "ITEM", "MERCY"].forEach((n, i) => {                                        // buttons
+    const x = 32 + i * 150, on = ph === "menu" && B.sel === i;
+    ctx.strokeStyle = ctx.fillStyle = on ? "#ff0" : "#f80"; ctx.lineWidth = 4;
+    ctx.strokeRect(x, 435, 125, 40); ctx.fillText(n, x + 30, 442);
+    if (on) heart(x + 18, 455, 8, "#f00");
+  });
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (fade.a > 0) { ctx.fillStyle = `rgba(0,0,0,${fade.a})`; ctx.fillRect(0, 0, W, H); }
+}
+
+const CREDITS = [
+  "#405tale", "",
+  "#Programming & Map", "Zeinab Ghalavand (Amoo)", "",
+  "#Art", "Hadis Kamali Arya", "Zeinab Ghalavand (Amoo)", "",
+  "#Story & Characters", "Tabassom Alikhani (Toranj)", "Bahar Khodabakhsh", "",
+  "#Level Ideas", "Tabassom Alikhani (Toranj)", "",
+  "#Special Thanks", "Our juniors, for playing", "Hope you enjoyed,", "and welcome!", "", "",
+  "Inspired by Undertale and", "Deltarune by Toby Fox.", "Fan-made, unofficial,", "not affiliated.",
+];
+let endPhase = 0, credY = 0;
+
+function drawEnd(dt) {
+  endT += dt;
+  const W = canvas.width, H = canvas.height, s = Math.min(W / 640, H / 480);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "middle"; ctx.textAlign = "center"; ctx.direction = "ltr";
+  const font = px => `${px * s}px DeterminationMono, 'Courier New', monospace`;
+  if (endPhase === 0) {
+    ctx.globalAlpha = Math.min(1, endT / 1.5); ctx.fillStyle = "#fff";
+    ctx.font = font(48); ctx.fillText("THE END", W / 2, H * 0.14);
+    ctx.font = font(22);
+    const endText = "We are really glad you're here. This faculty is truly unique. It's full of different people, and everyone is unique in their own way. And I know you are too. We can't wait to get to know you. If you have any questions, please ask us. We've been there. We know.";
+    const endLines = []; let ln = "";
+    for (const w of endText.split(" ")) { if ((ln + w).length > 38) { endLines.push(ln.trim()); ln = ""; } ln += w + " "; }
+    endLines.push(ln.trim());
+    endLines.forEach((t, i) => ctx.fillText(t, W / 2, H * 0.3 + i * 32 * s));
+    ctx.globalAlpha = 1;
+    if (endT > 3) {                                        // after a moment: Z for the credits
+      ctx.fillStyle = "#888"; ctx.font = font(18);
+      ctx.fillText(touchOn ? "tap Z for credits" : "press Z for credits", W / 2, H * 0.93);
+      if (pressed.z || pressed.enter) { endPhase = 1; credY = H + 20 * s; }
+    }
+  } else {
+    credY -= 45 * s * dt;                                  // scroll up, stop when the last line is in the middle
+    const lineH = 34 * s, lastY = credY + (CREDITS.length - 1) * lineH;
+    if (lastY < H * 0.55) credY += (H * 0.55 - lastY);
+    ctx.font = font(22);
+    CREDITS.forEach((t, i) => {
+      if (!t) return;
+      const head = t[0] === "#";
+      ctx.fillStyle = head ? "#ff0" : "#fff";
+      ctx.fillText(head ? t.slice(1) : t, W / 2, credY + i * lineH);
+    });
+  }
+}
+
+/* ================= MUSIC ================= */
+
+const tracks = {};
+for (const [k, src] of Object.entries(MUSIC)) {
+  if (!src) continue;
+  const a = new Audio(src);
+  a.loop = true; a.preload = "auto"; a.volume = 0;
+  a.onerror = () => console.warn("Could not load music:", src);
+  tracks[k] = a;
+}
+// browsers only allow sound after the first key press / click
+let musicOn = false, wantTrack = null;
+addEventListener("keydown", () => (musicOn = true));
+addEventListener("pointerdown", () => (musicOn = true));
+
+function updateMusic(dt) {
+  const want = mode === "battle" ? "boss"
+             : mode === "end"    ? "end"
+             : Object.keys(LOCATIONS).find(k => LOCATIONS[k] === cur);
+  if (want !== wantTrack) {
+    wantTrack = want;
+    // boss and ending songs always start from the beginning; room songs resume where they stopped
+    if (tracks[want] && (want === "boss" || want === "end")) tracks[want].currentTime = 0;
+  }
+  const step = MUSIC_VOLUME * dt / MUSIC_FADE;
+  for (const [k, a] of Object.entries(tracks)) {
+    if (a.error) continue;
+    if (k === wantTrack && musicOn) {
+      if (a.paused) a.play().catch(() => {});
+      a.volume = Math.min(MUSIC_VOLUME, a.volume + step);
+    } else if (!a.paused) {
+      a.volume = Math.max(0, a.volume - step);
+      if (a.volume === 0) a.pause();
+    }
+  }
+}
+
+/* ================= LOOP ================= */
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  updateMusic(dt);
+  if (mode === "battle") { updateBattle(dt); drawBattle(); }
+  else if (mode === "end") drawEnd(dt);
+  else { update(dt); draw(); }
+  for (const k in pressed) delete pressed[k];
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
