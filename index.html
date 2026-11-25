@@ -1150,13 +1150,13 @@ function startDodge() { B.phase = "dodge"; B.timer = 6; B.bullets = []; B.spawnT
 
 function updateBattle(dt) {
   B.t += dt; B.shown += dt * 40; B.inv = Math.max(0, B.inv - dt);
-  const L = pressed.arrowleft || pressed.a, R = pressed.arrowright || pressed.d;
-  const U = pressed.arrowup || pressed.w,   D = pressed.arrowdown || pressed.s;
+  const kL = pressed.arrowleft || pressed.a, kR = pressed.arrowright || pressed.d;
+  const kU = pressed.arrowup || pressed.w,   kD = pressed.arrowdown || pressed.s;
   const ok = pressed.z || pressed.enter, back = pressed.x, ph = B.phase;
 
   if (ph === "menu") {
-    if (L) B.sel = (B.sel + 3) % 4;
-    if (R) B.sel = (B.sel + 1) % 4;
+    if (kL) B.sel = (B.sel + 3) % 4;
+    if (kR) B.sel = (B.sel + 1) % 4;
     if (ok) {
       if (B.sel === 0) { B.phase = "attack"; B.bar = 0; }
       else {
@@ -1166,8 +1166,8 @@ function updateBattle(dt) {
       }
     }
   } else if (ph === "sub") {
-    if (U) B.subSel = (B.subSel + B.sub.length - 1) % B.sub.length;
-    if (D) B.subSel = (B.subSel + 1) % B.sub.length;
+    if (kU) B.subSel = (B.subSel + B.sub.length - 1) % B.sub.length;
+    if (kD) B.subSel = (B.subSel + 1) % B.sub.length;
     if (back) B.phase = "menu";
     if (ok) {
       const c = B.sub[B.subSel];
