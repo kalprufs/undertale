@@ -10,6 +10,10 @@
     src: url("font/DeterminationMonoWebRegular-Z5oq.ttf") format("truetype");
   }
   @font-face {
+    font-family: "ZLabsPixel";
+    src: url("font/ZLabsPixel_12px_M_CN (1).ttf") format("truetype");   /* Chinese font: put it in the "font" folder */
+  }
+  @font-face {
     font-family: "RadioFill";
     src: url("font/Radio-Fill.ttf") format("truetype");   /* put Radio-Fill.ttf in the "font" folder */
   }
@@ -189,8 +193,8 @@ const LOCATIONS = {
         ...wrapPages("NOTICE: The Confucius Institute at the University of Tehran will hold HSK Level 2 and Level 4 exams and the Intermediate HSK Speaking Test."),
         "* Date: Saturday,\n  Aban 16, 1405\n  (November 7, 2026)",
       ] },
-      { name: "drinking fountain", x1: 4191.66, x2: 4353.47, y1: 2983.36, y2: 3144.24, reach: 100, run: () => ask("* Oh, free water.\n  Want some?", ["Yes", "No"], sel => {
-          talk = { lines: fixLines(sel === 0 ? "You drink some water. Not the cold, fresh type. Just... water." : "You walk away thirsty."), i: 0, shown: 0 };
+      { name: "drinking fountain", x1: 4191.66, x2: 4353.47, y1: 2983.36, y2: 3144.24, reach: 100, run: () => ask(L("* Oh, free water.\n  Want some?", "* 哦，免费的水。\n  要来一点吗？"), L(["Yes", "No"], ["要", "不要"]), sel => {
+          talk = { lines: fixLines(sel === 0 ? L("You drink some water. Not the cold, fresh type. Just... water.", "你喝了点水。不是那种冰凉清爽的水。就只是……水。") : L("You walk away thirsty.", "你渴着走开了。")), i: 0, shown: 0 };
         }) },
       { name: "map", x1: 5345.20, x2: 6143.95, y1: 2858.35, y2: 3238.56, reach: 40, lines: ["Persian Gulf.", "And the same name written in so many other languages."] },
       // lobby couch (in the main hall)
@@ -544,14 +548,14 @@ function ask(text, opts, cb, vertical) {
 }
 
 function askEnding(ex) {
-  ask("* Are you sure you want\n  to finish?", ["Yes", "No"], sel => {
+  ask(L("* Are you sure you want\n  to finish?", "* 确定要结束了吗？"), L(["Yes", "No"], ["是", "否"]), sel => {
     if (sel === 1) { player.y = ex.y2 + 70; player.dir = "down"; return; }   // step back out of the door
     const { total, seen } = interactStats();
     let msg;
-    if (seen === 0)              msg = "* So why did you even play?";
-    else if (seen === total)     msg = "* Oh we got a pro gamer.";
-    else if (seen > total / 2)   msg = "* Are we sure we checked\n  everything? Good job tho!";
-    else                         msg = "* Oh so you're bored huh?";
+    if (seen === 0)              msg = L("* So why did you even play?", "* 那你到底为什么要玩呢？");
+    else if (seen === total)     msg = L("* Oh we got a pro gamer.", "* 哦，我们遇到了一位职业玩家。");
+    else if (seen > total / 2)   msg = L("* Are we sure we checked\n  everything? Good job tho!", "* 我们确定都查看过了吗？\n  不过干得不错！");
+    else                         msg = L("* Oh so you're bored huh?", "* 哦，你是无聊了吧？");
     talk = { lines: [msg], i: 0, shown: 0, onEnd: () => { mode = "end"; endT = 0; endPhase = 0; } };
   });
 }
@@ -602,6 +606,7 @@ const locName = () => Object.keys(LOCATIONS).find(k => LOCATIONS[k] === cur);
 
 // cuts a text into dialogue pages: "* " on the first line, 3 lines per page, ~30 letters per line
 function wrapPages(text, width = 30, maxLines = 3) {
+  if (/[\u3000-\u9fff\uff00-\uffef]/.test(text)) return wrapPagesZh(text, maxLines);   // Chinese text has its own wrapper
   const lines = []; let line = "* ";
   for (const w of text.split(" ")) {
     if (line.trim().length > 1 && (line + w).length > width) { lines.push(line.trimEnd()); line = "  " + w + " "; }
@@ -614,6 +619,39 @@ function wrapPages(text, width = 30, maxLines = 3) {
     if (i > 0) part[0] = "* " + part[0].trimStart();            // a new page starts with "* " again
     pages.push(part.join("\n"));
   }
+  return pages;
+}
+/* ---------- Chinese support ----------
+   LANG is chosen at the start of the game ("en" or "zh"). L(english, chinese) returns the right one. */
+let LANG = "en";
+function L(en, zh) { return LANG === "zh" ? zh : en; }
+
+// breaks Chinese text into lines no wider than capEm (one Chinese character = 1, one Latin letter/digit = 0.6)
+function zhBreak(text, capEm) {
+  const lines = [];
+  for (const para of String(text).split("\n")) {
+    let cur = "", w = 0;
+    for (const t of para.match(/[\x21-\x7e]+|\s|[^\x00-\x7f\s]/gu) || []) {
+      const space = /^\s$/.test(t);
+      if (space && !cur) continue;
+      let tw = 0; for (const c of t) tw += c.charCodeAt(0) < 256 ? 0.6 : 1;
+      const closing = /^[，。、！？；：）》」』”’…—!?,.;:)]/.test(t);          // may hang over the edge instead of starting a line
+      if (cur && !space && w + tw > capEm && !(closing && w + tw <= capEm + 1)) {
+        let carry = ""; const m = cur.match(/[（《「『“‘]$/);                 // an opening bracket never ends a line
+        if (m) { carry = m[0]; cur = cur.slice(0, -1); }
+        lines.push(cur.trimEnd()); cur = carry; w = carry ? 1 : 0;
+      }
+      cur += t; w += tw;
+    }
+    lines.push(cur.trimEnd());
+  }
+  return lines;
+}
+// same pages as wrapPages, for Chinese: "* " on the first line of a page, 3 lines per page, about 18 characters per line
+function wrapPagesZh(text, maxLines = 3) {
+  const ls = zhBreak(text, 18.4), pages = [];
+  for (let i = 0; i < ls.length; i += maxLines)
+    pages.push(ls.slice(i, i + maxLines).map((l, k) => (k === 0 ? "* " : "  ") + l).join("\n"));
   return pages;
 }
 function guideSay(texts, onEnd) {
@@ -634,7 +672,7 @@ function startIntro() {
   guideWalk(path, () => { guide.dir = "down"; guideIntroTalk(); });
 }
 function guideIntroTalk() {
-  guideSay([
+  guideSay(L([
     "Welcome to university! I'm really happy to see you here.",
     "I'm going to guide you through the main parts of our university and Chinese language.",
     "Sorry, this game looks wonky. We didn't have a lot of time, but let's have fun!",
@@ -642,9 +680,17 @@ function guideIntroTalk() {
     "To the right is the library.",
     "At the top right is the university staff. They're on lunch break, but they're always on lunch break, so no worries.",
     "And at the top left is a very hard boss fight. We hope you can win!",
-  ], () => ask("* Do you want me to\n  follow you?", ["Yes", "No"], sel => {
-    if (sel === 0) guideSay("Great! Let's go together!", () => { lockInput = false; startFollow(); });
-    else guideSay("Oh, good. I had a class to go to anyway.", () => {
+  ], [
+    "欢迎来到大学！我真的很高兴在这里见到你。",
+    "我会带你熟悉我们大学和中文专业的主要区域。",
+    "抱歉，这个游戏看起来有点奇怪。我们没有太多时间，不过让我们玩得开心！",
+    "左边是114教室。",
+    "右边是图书馆。",
+    "右上角是学校的工作人员。他们正在午休，不过他们总是在午休，所以别担心。",
+    "左上角是一场非常难的Boss战。希望你能赢！",
+  ]), () => ask(L("* Do you want me to\n  follow you?", "* 你想让我跟着你吗？"), L(["Yes", "No"], ["好", "不用"]), sel => {
+    if (sel === 0) guideSay(L("Great! Let's go together!", "太好了！我们一起走吧！"), () => { lockInput = false; startFollow(); });
+    else guideSay(L("Oh, good. I had a class to go to anyway.", "哦，太好了。我正好有课要上。"), () => {
       lockInput = false;
       guideWalk([{ x: GUIDE.leave[0].x, y: guide.y }, ...GUIDE.leave], () => { guide.mode = "gone"; });
     });
@@ -766,48 +812,56 @@ const INVENTORY = [
   { fa: "کارت ملی (اصل)" },
   { fa: "عکس پرسنلی (۱۲ قطعه)" },
   { fa: "ریزنمرات دیپلم" },
-  { fa: "کارت پایان خدمت یا معافیت تحصیلی (فقط توی کیف آقایون)" },
 ];
 let invOpen = false, invSel = 0;
 const invItems = () => INVENTORY;
 document.fonts.load("24px RadioFill");
+document.fonts.load("26px ZLabsPixel", "中文");
 let nameTyping = false;
 const nameInput = document.createElement("input");
 nameInput.type = "text"; nameInput.maxLength = 14; nameInput.autocomplete = "off"; nameInput.spellcheck = false;
 nameInput.style.cssText = "position:fixed;left:-300px;top:0;opacity:0;width:200px;font-size:16px;";
 document.body.appendChild(nameInput);
+// no Persian / Arabic letters in the name: they are removed as soon as they are typed or pasted
+const FARSI_RE = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufeff]/g;
+nameInput.addEventListener("input", () => { if (FARSI_RE.test(nameInput.value)) nameInput.value = nameInput.value.replace(FARSI_RE, ""); FARSI_RE.lastIndex = 0; });
 for (const ev of ["pointerdown", "click", "touchend"]) addEventListener(ev, () => { if (nameTyping) nameInput.focus(); });
 
 function startWelcome() {
   lockInput = true;
-  guideSay([
+  guideSay(L([
     "Hello! Welcome to UT's FFLL!",
     "University of Tehran, Faculty of Foreign Languages and Literature!",
     "Congratulations on getting into the Chinese Language Major family!",
     "Before you step in, we'd love to know a little about you.",
-  ], () => { nameTyping = true; nameInput.value = ""; nameInput.focus(); });
+  ], [
+    "你好！欢迎来到德黑兰大学外国语言与文学系！",
+    "恭喜你考入中文专业，加入我们这个温暖的大家庭！",
+    "在你进入专业大楼之前，我们想简单了解一下你。",
+  ]), () => { nameTyping = true; nameInput.value = ""; nameInput.focus(); });
 }
 function finishName() {
   const n = nameInput.value.trim();
   if (!n) return;                                   // needs at least one letter
   const low = n.toLowerCase().replace(/[^a-z\u0600-\u06ff ]/g, "").replace(/\s+/g, " ").trim();
   const reask = text => { nameTyping = false; nameInput.blur(); guideSay(text, () => { nameTyping = true; nameInput.value = ""; nameInput.focus(); }); };
-  if (low.replace(/ /g, "") === "frisk") return reask("Oh, you know ball.");
+  if (low.replace(/ /g, "") === "frisk") return reask(L("Oh, you know ball.", "哦，你很懂嘛。"));
   const BAD_ANY = ["fuck", "shit", "bitch", "cunt"];              // blocked anywhere inside the name
   const BAD_WORD = ["kir", "kos", "کیر", "کوس"];                   // blocked only as a whole word (so Kosar / Akira are fine)
-  if (BAD_ANY.some(w => low.replace(/ /g, "").includes(w)) || low.split(" ").some(w => BAD_WORD.includes(w))) return reask("Nope.");
+  if (BAD_ANY.some(w => low.replace(/ /g, "").includes(w)) || low.split(" ").some(w => BAD_WORD.includes(w))) return reask(L("Nope.", "不行。"));
   profile.name = n; nameTyping = false; nameInput.blur();
-  guideSay("Nice to meet you, " + n + "! Just one more thing.", askHome);
+  guideSay(L("Nice to meet you, " + n + "! Just one more thing.", "真高兴我们终于见到你了，" + n + "！还有几个小问题。"), askHome);
 }
 function askGender() {
   const opts = ["Female (she/her)", "Male (he/him)", "Non-binary (they/them)"];
   ask("* How do you identify?", opts, sel => { profile.gender = opts[sel]; askHome(); }, true);
 }
 function askHome() {
-  const opts = ["Home", "Dorms"];
-  ask("* And where do you go back\n  to at night?", opts, sel => {
-    profile.home = opts[sel];
-    guideSay(["Great! Come on in, " + profile.name + ". You must be excited!", "Oh, and press X any time to check your bag."], () => { lockInput = false; });
+  const opts = L(["Home", "Dorms"], ["回家", "回宿舍"]);
+  ask(L("* And where do you go back\n  to at night?", "* 你晚上住在哪里？"), opts, sel => {
+    profile.home = ["Home", "Dorms"][sel];
+    guideSay(L(["Great! Come on in, " + profile.name + ". You must be excited!", "Oh, and press X any time to check your bag."],
+               ["太好了，快进来吧，" + profile.name + "。你一定很兴奋吧！", "哦，对了，你随时可以按 X 查看你的背包。"]), () => { lockInput = false; });
   }, true);
 }
 function drawNameEntry() {
@@ -815,17 +869,109 @@ function drawNameEntry() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "rgba(0,0,0,.93)"; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "top";
-  ctx.font = `${30 * s}px DeterminationMono, 'Courier New', monospace`;
-  ctx.fillText("What's your name?", W / 2, H * 0.22);
-  ctx.font = `${48 * s}px DeterminationMono, 'Courier New', monospace`;
+  ctx.font = `${30 * s}px DeterminationMono, ZLabsPixel, 'Courier New', monospace`;
+  ctx.fillText(L("What's your name?", "你叫什么名字？"), W / 2, H * 0.22);
+  ctx.font = `${48 * s}px DeterminationMono, ZLabsPixel, 'Courier New', monospace`;
   const blink = Math.floor(performance.now() / 500) % 2 === 0;
   ctx.fillText(nameInput.value + (blink ? "_" : " "), W / 2, H * 0.42);
-  ctx.font = `${22 * s}px DeterminationMono, 'Courier New', monospace`;
+  ctx.font = `${22 * s}px DeterminationMono, ZLabsPixel, 'Courier New', monospace`;
   ctx.fillStyle = nameInput.value.trim() ? "#ff0" : "#888";
-  ctx.fillText(touchOn ? "Tap the screen to type, then press OK" : "Press ENTER to confirm", W / 2, H * 0.66);
+  ctx.fillText(touchOn ? L("Tap the screen to type, then press OK", "点击屏幕输入名字，然后按 OK") : L("Press ENTER to confirm", "按回车键确认"), W / 2, H * 0.66);
   ctx.textAlign = "left";
 }
-startWelcome();
+/* ================= CHINESE TEXT =================
+   Used when "中文" is chosen at the start. Same objects / characters as the English text above (looked up by name).
+   One entry = one page of dialogue (it is wrapped automatically). \n = a forced line break. */
+const ZH_TEXT = {
+  school: {
+    "mario": ["你确定要进去吗？进去过的人，心理健康和课程成绩都下降了。我只是来提醒你的，不过你请便吧。"],
+    "guy": ["等等，我会说中文！" + "冰淇淋".repeat(14)],
+    "grinch": ["嘘——我在偷他们的自动售货机。这是这里最接近圣诞节的东西了。"],
+    "bear": ["你是新来的吗？你知道吧，每周至少有一次必须系领带。"],
+    "ness": ["友情提示：一定要留好证件的复印件。一定。相信我。"],
+    "locker 1": ["偷看别人的储物柜是不礼貌的。我们走吧。"],
+    "locker 2": ["偷看别人的储物柜是不礼貌的。我们走吧。"],
+    "locker 3": ["李老师被遗弃的储物柜。里面还有一瓶芒果汁。传说她曾经走过这些走廊，不过没人记得是什么时候了。"],
+    "locker 4": ["里面全是旧的HSK练习卷。有人真的很想拿到四级。"],
+    "locker 5": ["卡住了。也许会永远卡下去。"],
+    "diagonal lockers": ["这些储物柜的角度很奇怪。没人知道为什么。建筑师们保持沉默。"],
+    "board 1": [
+      "通知：将举行1405级中文专业新生欢迎仪式，学院的教授和学生组织将出席。",
+      "时间：星期二，1405/09/10\n（2026年12月1日）\n11:40 - 12:55",
+      "地点：外国语言与文学系\n波斯湾厅",
+    ],
+    "board 2": ["德黑兰大学孔子学院将于2026年11月7日（波斯历／伊朗历1405年8月16日，星期六）举行HSK二级、四级考试及中级口语考试。"],
+    "map": ["波斯湾。", "还有用许多其他语言写下的同一个名字。"],
+    "lobby couch": ["哦，这就是 Zabanha 的核心。", "你现在真正成为我们的一员了！我们太累了，没来得及加上乒乓球桌。", "不过你很快就会见到它的。"],
+    "door": ["教职工办公室。", "他们都是很好的人，不过你很快就会认识他们的。"],
+  },
+  room114: {
+    enter: ["欢迎来到114教室！", "你会在这里上很多课。大部分中文课都在这间教室里进行。", "你会在这里遇见你喜欢的人……嗯，也会遇见别的人。"],
+    "prof": ["我的猫……"],
+    "redboy": ["卡布奇诺……\n卡布奇诺……\n上午11点以后的卡布奇诺……"],
+    "blondboy": ["我快饿死了……T-T"],
+    "blueboy": ["午饭吃什么？"],
+    "teacher desk": ["一摞摞试卷，还有一支非常可疑的红笔。"],
+    "whiteboard": ["黑板上写满了汉字。你一个也看不懂……暂时看不懂。"],
+    "clock": ["那是个时钟。在听力课上，它仿佛能让时间凝固。"],
+    "wall notes": ["课程表。要经常查看，教室会毫无预警地更换。"],
+    "student desk 1": ["对，那是瓦法伊教授……"],
+    "student desk 2": ["呼呼呼……"],
+    "student desk 3": ["他们似乎正忙着记笔记。"],
+    "student desk 4": ["一些年，一个人🎵", "他们似乎在唱一首中文歌。"],
+    "student desk 5": ["我的猫喝卡布奇诺。"],
+    "student desk 6": ["这里刻着一些汉字。你现在还看不懂，两年后再来试试吧。"],
+    "student desk 7": ["一把椅子，一张桌子。仅此而已。"],
+    "student desk 8": ["你坐了上去。它还是温的。", "椅子在你的重量下开始吱吱作响，你立刻站了起来。"],
+    "student desk 9": ["有一把坏掉的椅子。你在上面发现了一张便条。", "“西班牙语专业学生曾在此停留。”"],
+  },
+  kongzi: {
+    enter: ["孔子学院是中国语言文化与世界之间的桥梁。", "这里是图书馆。这是孔子学院在伊朗唯一的图书馆。", "这简直就是中文的天堂。我想你会爱上在这里学习的。"],
+    "book1": ["《阿Q正传》 — 鲁迅", "《红楼梦》 — 曹雪芹", "《花木兰》"],
+    "book2": ["《井底之蛙》", "巴兹拉夫尚先生的旧书。它上面有个 :("],
+    "reception": ["接待处。关于图书馆有任何问题，可以来这里询问。"],
+    "stand": ["《西游记》 — 吴承恩", "《论语》 — 孔子"],
+    "library desk": ["图书管理员不在。大概被困在听力课上了。"],
+    "stairs": ["我们的孔子学院办公室在三楼。不过那是另一个游戏、另一天的故事了。"],
+  },
+};
+
+function applyLanguage() {
+  if (LANG !== "zh") return;
+  document.documentElement.lang = "zh-CN";
+  const pagesZh = a => [].concat(a).flatMap(l => wrapPagesZh(String(l).replace(/^\*\s*/, "").trim()));
+  for (const [ln, tbl] of Object.entries(ZH_TEXT)) {
+    const loc = LOCATIONS[ln];
+    if (tbl.enter) loc.enter = pagesZh(tbl.enter);
+    for (const o of loc.interact || []) {
+      const t = tbl[o.name];
+      if (!t) continue;
+      if (o.cycle) o.cycle = t.map(c => pagesZh(c)); else o.lines = pagesZh(t);
+    }
+  }
+  Object.assign(BOSS, {
+    encounter: "* 书本挡住了去路！",
+    check: "* 书本 - ATK 4 DEF 0\n* 它的书页里全是秘密。",
+    talk: "* 你大声朗读了一页。\n* 书本似乎平静了一些。",
+    flavor: ["* 书本哗啦啦地翻动书页。", "* 书本在原地飘动。", "* 闻起来像旧纸张。"],
+    win: "* 你赢了！\n* 获得了0点EXP和0金币。",
+    spare: "* 你饶恕了书本。",
+    notReady: "* 书本还没准备好被饶恕。",
+  });
+  CREDITS = CREDITS_ZH;
+  document.getElementById("rotate").textContent = "把手机横过来效果最佳（点击隐藏）";
+}
+
+// first thing in the game: choose the language
+function startLanguage() {
+  lockInput = true;
+  ask("* Choose your language.\n  请选择你的语言。", ["English", "中文"], sel => {
+    LANG = sel === 1 ? "zh" : "en";
+    applyLanguage();
+    startWelcome();
+  }, true);
+}
+startLanguage();
 
 /* ================= UPDATE ================= */
 
@@ -999,19 +1145,19 @@ function drawInventory() {
   ctx.fillStyle = "#000"; ctx.fillRect(bx, by, bw, bh);
   ctx.strokeStyle = "#fff"; ctx.lineWidth = 5 * s; ctx.strokeRect(bx, by, bw, bh);
   ctx.textBaseline = "top"; ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.direction = "ltr";
-  ctx.font = `${26 * s}px DeterminationMono, 'Courier New', monospace`;
-  ctx.fillText("INVENTORY", bx + 24 * s, by + 18 * s);
+  ctx.font = `${26 * s}px DeterminationMono, ZLabsPixel, 'Courier New', monospace`;
+  ctx.fillText(L("INVENTORY", "背包"), bx + 24 * s, by + 18 * s);
   ctx.textAlign = "right"; ctx.direction = "rtl";
   items.forEach((it, i) => {
     const y = by + (66 * s) + i * rowH, on = i === invSel;
-    ctx.font = `${24 * s}px ${INV_FONT}`;
+    ctx.font = `${10 * s}px ${INV_FONT}`;
     ctx.fillStyle = on ? "#ff0" : "#fff";
     ctx.fillText(it.fa, bx + bw - 56 * s, y);
     if (on) heart(bx + bw - 30 * s, y + 14 * s, 8 * s, "#f00");
   });
   ctx.direction = "ltr"; ctx.textAlign = "left"; ctx.fillStyle = "#888";
-  ctx.font = `${18 * s}px DeterminationMono, 'Courier New', monospace`;
-  ctx.fillText("X: close", bx + 24 * s, by + bh - 28 * s);
+  ctx.font = `${18 * s}px DeterminationMono, ZLabsPixel, 'Courier New', monospace`;
+  ctx.fillText(L("X: close", "X：关闭"), bx + 24 * s, by + bh - 28 * s);
 }
 
 // Undertale-style dialogue box at the BOTTOM of the screen
@@ -1023,11 +1169,14 @@ function drawDialogue() {
   ctx.fillStyle = "#000"; ctx.fillRect(bx, by, bw, bh);
   ctx.strokeStyle = "#fff"; ctx.lineWidth = 5 * s; ctx.strokeRect(bx, by, bw, bh);
   ctx.fillStyle = "#fff";
-  ctx.font = `${26 * s}px DeterminationMono, 'Courier New', monospace`;
+  ctx.font = `${26 * s}px DeterminationMono, ZLabsPixel, 'Courier New', monospace`;
   ctx.textBaseline = "top"; ctx.textAlign = "left";
   const full = talk.lines[talk.i];
+  const rtl = /[\u0600-\u06ff]/.test(full), mainFont = ctx.font;     // Persian lines: Radio-Fill font, right to left
+  if (rtl) { ctx.font = `${24 * s}px ${INV_FONT}`; ctx.direction = "rtl"; ctx.textAlign = "right"; }
   full.slice(0, talk.shown | 0).split("\n")
-    .forEach((l, i) => ctx.fillText(l, bx + 20 * s, by + 20 * s + i * 32 * s));
+    .forEach((l, i) => ctx.fillText(l, rtl ? bx + bw - 20 * s : bx + 20 * s, by + 20 * s + i * 32 * s));
+  if (rtl) { ctx.font = mainFont; ctx.direction = "ltr"; ctx.textAlign = "left"; }
   if (talk.choice && talk.i === talk.lines.length - 1 && talk.shown >= full.length) {
     const rows = full.split("\n").length, y = by + 20 * s + rows * 32 * s;
     talk.choice.opts.forEach((o, k) => {
@@ -1148,7 +1297,7 @@ function updateBattle(dt) {
       else {
         B.sub = [["Check", "Talk"], B.items > 0 ? ["Bandage x" + B.items] : [], ["Spare"]][B.sel - 1];
         B.subSel = 0;
-        if (B.sub.length) B.phase = "sub"; else say("* You have no items.", "menu");
+        if (B.sub.length) B.phase = "sub"; else say(L("* You have no items.", "* 你没有物品了。"), "menu");
       }
     }
   } else if (ph === "sub") {
@@ -1159,7 +1308,7 @@ function updateBattle(dt) {
       const c = B.sub[B.subSel];
       if (c === "Check") say(BOSS.check);
       else if (c === "Talk") { B.calm = true; say(BOSS.talk); }
-      else if (c.startsWith("Bandage")) { B.items--; B.php = Math.min(PMAX, B.php + 10); say("* You used a Bandage.\n* HP restored."); }
+      else if (c.startsWith("Bandage")) { B.items--; B.php = Math.min(PMAX, B.php + 10); say(L("* You used a Bandage.\n* HP restored.", "* 你使用了绷带。\n* HP 已恢复。")); }
       else if (B.calm || B.bhp <= BOSS.hp * 0.3) { B.won = true; say(BOSS.spare, "end"); }
       else say(BOSS.notReady);
     }
@@ -1195,7 +1344,7 @@ function updateBattle(dt) {
       if (B.inv <= 0 && Math.abs(b.x + b.w / 2 - B.hx) < b.w / 2 + 6 && Math.abs(b.y + b.h / 2 - B.hy) < b.h / 2 + 6) { B.php -= BOSS.atk; B.inv = 1; }
     }
     B.bullets = B.bullets.filter(b => b.x > 200 && b.x < 440 && b.y < 400);
-    if (B.php <= 0) { B.phase = "dead"; B.text = "GAME OVER\n* Press Z"; B.shown = 999; }
+    if (B.php <= 0) { B.phase = "dead"; B.text = L("GAME OVER\n* Press Z", "游戏结束\n* 按 Z 键"); B.shown = 999; }
     else if (B.timer <= 0) { B.turn++; toMenu(); }
   } else if (ph === "dead") {
     if (ok) endBattle();
@@ -1208,11 +1357,14 @@ function heart(x, y, s, c) {
   ctx.bezierCurveTo(x + s * 0.5, y - s * 0.6, x + s * 1.2, y + s * 0.1, x, y + s * 0.9); ctx.fill();
 }
 
+function subLabel(o) {   // sub-menu labels are English inside the code; this is only what is shown
+  return LANG !== "zh" ? o : ({ Check: "查看", Talk: "交谈", Spare: "饶恕" }[o] ?? o.replace("Bandage", "绷带"));
+}
 function drawBattle() {
   const W = canvas.width, H = canvas.height, s = Math.min(W / 640, H / 480);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
   ctx.setTransform(s, 0, 0, s, (W - 640 * s) / 2, (H - 480 * s) / 2);
-  ctx.font = "26px DeterminationMono, 'Courier New', monospace"; ctx.textBaseline = "top"; ctx.textAlign = "left";
+  ctx.font = "26px DeterminationMono, ZLabsPixel, 'Courier New', monospace"; ctx.textBaseline = "top"; ctx.textAlign = "left";
   const ph = B.phase, dodge = ph === "dodge";
 
   if (!B.won) {                                           // boss
@@ -1233,7 +1385,7 @@ function drawBattle() {
   ctx.fillStyle = "#fff";
   const lines = t => String(t).split("\n").forEach((l, i) => ctx.fillText(l, 52, 282 + i * 32));
   if (ph === "menu" || ph === "say" || ph === "dead") lines(B.text.slice(0, B.shown | 0));
-  if (ph === "sub") B.sub.forEach((o, i) => { ctx.fillText(o, 92, 282 + i * 32); if (i === B.subSel) heart(70, 295 + i * 32, 8, "#f00"); });
+  if (ph === "sub") B.sub.forEach((o, i) => { ctx.fillText(subLabel(o), 92, 282 + i * 32); if (i === B.subSel) heart(70, 295 + i * 32, 8, "#f00"); });
   if (ph === "attack" || ph === "hit") {
     ctx.lineWidth = 3; ctx.strokeRect(52, 290, 536, 70);
     ctx.beginPath(); ctx.moveTo(320, 290); ctx.lineTo(320, 360); ctx.stroke();
@@ -1250,7 +1402,7 @@ function drawBattle() {
   ctx.fillStyle = "#c00"; ctx.fillRect(345, 398, 100, 22);
   ctx.fillStyle = "#ff0"; ctx.fillRect(345, 398, 100 * Math.max(0, B.php) / PMAX, 22);
   ctx.fillStyle = "#fff"; ctx.fillText(Math.max(0, B.php) + " / " + PMAX, 460, 398);
-  ["FIGHT", "ACT", "ITEM", "MERCY"].forEach((n, i) => {                                        // buttons
+  L(["FIGHT", "ACT", "ITEM", "MERCY"], ["战斗", "行动", "物品", "饶恕"]).forEach((n, i) => {                                        // buttons
     const x = 32 + i * 150, on = ph === "menu" && B.sel === i;
     ctx.strokeStyle = ctx.fillStyle = on ? "#ff0" : "#f80"; ctx.lineWidth = 4;
     ctx.strokeRect(x, 435, 125, 40); ctx.fillText(n, x + 30, 442);
@@ -1260,14 +1412,19 @@ function drawBattle() {
   if (fade.a > 0) { ctx.fillStyle = `rgba(0,0,0,${fade.a})`; ctx.fillRect(0, 0, W, H); }
 }
 
-const CREDITS = [
-  "#405tale", "",
-  "#Programming & Map", "Zeinab Ghalavand (Amoo)", "",
-  "#Art", "Hadis Kamali Arya", "Zeinab Ghalavand (Amoo)", "",
-  "#Story & Characters", "Tabassom Alikhani (Toranj)", "Bahar Khodabakhsh", "",
-  "#Level Ideas", "Tabassom Alikhani (Toranj)", "",
-  "#Special Thanks", "Our juniors, for playing", "Hope you enjoyed,", "and welcome!", "", "",
-  "Inspired by Undertale and", "Deltarune by Toby Fox.", "Fan-made, unofficial,", "not affiliated.",
+let CREDITS = [
+  "#Code", "扎因 Zeinab Ghalavand (Amoo)", "",
+  "#Art and design", "蓝灵 Hadis Kamali Arya (Khale)", "扎因 Zeinab Ghalavand (Amoo)", "",
+  "#Writing", "沈笑娴 Tabassom Alikhani (Toranj)", "英春伶 Bahar KhodaBakhsh (Lamine)", "佳馨雅 Maryam AhmadNejad (Xinberry)", "",
+  "#Translation", "米怡人 Sarvin Ghaemi (Malake)", "沈笑娴 Tabassom Alikhani (Toranj)", "扎因 Zeinab Ghalavand (Amoo)", "",
+  "#With guidance of", "谢夏珩 博士 Dr. Xie Xiaheng",
+];
+const CREDITS_ZH = [
+  "#代码", "扎因 Zeinab Ghalavand (Amoo)", "",
+  "#美术与设计", "蓝灵 Hadis Kamali Arya (Khale)", "扎因 Zeinab Ghalavand (Amoo)", "",
+  "#文案", "沈笑娴 Tabassom Alikhani (Toranj)", "英春伶 Bahar KhodaBakhsh (Lamine)", "佳馨雅 Maryam AhmadNejad (Xinberry)", "",
+  "#翻译", "米怡人 Sarvin Ghaemi (Malake)", "沈笑娴 Tabassom Alikhani (Toranj)", "扎因 Zeinab Ghalavand (Amoo)", "",
+  "#指导老师", "谢夏珩 博士 Dr. Xie Xiaheng",
 ];
 let endPhase = 0, credY = 0;
 
@@ -1276,20 +1433,23 @@ function drawEnd(dt) {
   const W = canvas.width, H = canvas.height, s = Math.min(W / 640, H / 480);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
   ctx.textBaseline = "middle"; ctx.textAlign = "center"; ctx.direction = "ltr";
-  const font = px => `${px * s}px DeterminationMono, 'Courier New', monospace`;
+  const font = px => `${px * s}px DeterminationMono, ZLabsPixel, 'Courier New', monospace`;
   if (endPhase === 0) {
     ctx.globalAlpha = Math.min(1, endT / 1.5); ctx.fillStyle = "#fff";
-    ctx.font = font(48); ctx.fillText("THE END", W / 2, H * 0.14);
+    ctx.font = font(48); ctx.fillText(L("THE END", "完"), W / 2, H * 0.14);
     ctx.font = font(22);
-    const endText = "We are really glad you're here. This faculty is truly unique. It's full of different people, and everyone is unique in their own way. And I know you are too. We can't wait to get to know you. If you have any questions, please ask us. We've been there. We know.";
+    const endText = L("We are really glad you're here. This faculty is truly unique. It's full of different people, and everyone is unique in their own way. And I know you are too. We can't wait to get to know you. If you have any questions, please ask us. We've been there. We know.", "我们真的很高兴你来到这里。这个学院真的很特别。这里有各种各样的人，每个人都以自己的方式独一无二。我知道你也是。我们迫不及待想认识你。如果你有任何问题，请随时问我们。我们都经历过，我们懂。");
     const endLines = []; let ln = "";
-    for (const w of endText.split(" ")) { if ((ln + w).length > 38) { endLines.push(ln.trim()); ln = ""; } ln += w + " "; }
-    endLines.push(ln.trim());
+    if (LANG === "zh") endLines.push(...zhBreak(endText, 24));
+    else {
+      for (const w of endText.split(" ")) { if ((ln + w).length > 38) { endLines.push(ln.trim()); ln = ""; } ln += w + " "; }
+      endLines.push(ln.trim());
+    }
     endLines.forEach((t, i) => ctx.fillText(t, W / 2, H * 0.3 + i * 32 * s));
     ctx.globalAlpha = 1;
     if (endT > 3) {                                        // after a moment: Z for the credits
       ctx.fillStyle = "#888"; ctx.font = font(18);
-      ctx.fillText(touchOn ? "tap Z for credits" : "press Z for credits", W / 2, H * 0.93);
+      ctx.fillText(touchOn ? L("tap Z for credits", "点按 Z 查看制作名单") : L("press Z for credits", "按 Z 键查看制作名单"), W / 2, H * 0.93);
       if (pressed.z || pressed.enter) { endPhase = 1; credY = H + 20 * s; }
     }
   } else {
