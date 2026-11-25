@@ -11,17 +11,16 @@
   }
   @font-face {
     font-family: "ZLabsPixel";
-    src: url("font/ZLabsPixel_12px_M_CN (1).ttf") format("truetype");   /* Chinese font: put it in the "font" folder */
+    src: url("font/ZLabsPixel_12px_M_CN (1).ttf") format("truetype");
   }
   @font-face {
     font-family: "RadioFill";
-    src: url("font/Radio-Fill.ttf") format("truetype");   /* put Radio-Fill.ttf in the "font" folder */
+    src: url("font/Radio-Fill.ttf") format("truetype");
   }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none;
                -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
   canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; image-rendering: pixelated; touch-action: none; }
 
-  /* ---- phone controls (shown on touch screens) ---- */
   #touch { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 5; touch-action: none; }
   #touch.on { display: block; }
   #touch.typing #stick, #touch.typing .tbtn { display: none; }
@@ -59,9 +58,7 @@
 <div id="rotate" onclick="this.style.display='none'">Turn your phone sideways for the best view (tap to hide)</div>
 
 <script>
-/* ================= CONFIG (edit these) ================= */
 
-// Character sprites: rename to match your files
 const SPRITES = {
   stand: {
     down:  "sprites/standingdown.png",
@@ -69,7 +66,7 @@ const SPRITES = {
     left:  "sprites/standingleft.png",
     right: "sprites/standingright.png",
   },
-  walk: {                                       // each sheet: 4 frames side by side
+  walk: {
     down:  "sprites/walkingdown.png",
     up:    "sprites/walkingup.png",
     left:  "sprites/walkingleft.png",
@@ -77,33 +74,27 @@ const SPRITES = {
   },
 };
 
-const SPEED = 450;           // world px per second
-const FRAMES = 4;            // frames per walking sheet
-const FRAME_TIME = 0.12;     // seconds per frame
-const FADE_TIME = 0.25;      // seconds for each half of the fade between locations
+const SPEED = 450;
+const FRAMES = 4;
+const FRAME_TIME = 0.12;
+const FADE_TIME = 0.25;
 
-// Collision box at her feet (this is your "padding" from the walls)
 const FEET_W = 70, FEET_H = 30;
 
-// Which location the game starts in
 const START = "tale405";
 
-/* ---------- Music (put your songs in a "music" folder next to index.html) ----------
-   One song per place. Rename the files here to match yours.
-   Leave "" for no music in that place. Songs loop and fade between places. */
 const MUSIC = {
-  tale405: "music/405tale.mp3",     // 405 room (start)
-  school:  "music/school.mp3",      // school hallways
-  room114: "music/room114.mp3",     // room 114
-  kongzi:  "music/kongzi.mp3",      // kongzi room
-  boss:    "music/boss.mp3",        // boss fight (BOOK)
-  end:     "music/end.mp3",         // THE END screen
+  tale405: "music/405tale.mp3",
+  school:  "music/school.mp3",
+  room114: "music/room114.mp3",
+  kongzi:  "music/kongzi.mp3",
+  boss:    "music/boss.mp3",
+  end:     "music/end.mp3",
 };
-const MUSIC_VOLUME = 0.6;           // 0 to 1
-const MUSIC_FADE = 0.6;             // seconds to fade between songs
+const MUSIC_VOLUME = 0.6;
+const MUSIC_FADE = 0.6;
 
 
-/* ---------- School room borders (walkable space = union of these) ---------- */
 const schoolRooms = {
   mainHall:     { x1: 2943.98, x2: 4063.93, y1: 1959.94, y2: 4040.00 },
   leftHall:     { x1: 99.14,   x2: 2943.99, y1: 3239.99, y2: 3560.01 },
@@ -113,77 +104,59 @@ const schoolRooms = {
   higherHall:   { x1: 1503.83, x2: 5503.61, y1: 519.87,   y2: 839.99 },
 };
 
-/* ---------- Locations ----------
-   walkable : areas she can stand in      {x1,y1,x2,y2}
-   blockers : solid objects inside them   {x1,y1,x2,y2}
-   exits    : zones that send her to another location (also walkable)
-   zoom     : camera zoom for this location
-   spriteH  : how tall she is drawn here (world px)                    */
 const LOCATIONS = {
   tale405: {
-    image: "405tale.png",              // 1683 x 1244
+    image: "405tale.png",
     w: 1683, h: 1244,
-    zoom: "fit",                       // whole room always visible, no zoom-in, no camera follow
-    spriteH: 150,                      // her size in this room (smaller number = smaller her)
+    zoom: "fit",
+    spriteH: 150,
     spawn: { x: 839, y: 1180, dir: "up" },
-    interact: [],                      // same format as room114
+    interact: [],
     walkable: [
       { x1: 263.34, x2: 1419.58, y1: 1054.01, y2: 1244 },
     ],
     blockers: [],
     exits: [
-      // entrance to the next room: Deltarune school
       { x1: 736.66, x2: 941.90, y1: 998.81, y2: 1054.01,
         to: "school", spawn: { x: 3504, y: 4700, dir: "up" } },
     ],
   },
 
   school: {
-    image: "deltarune_school.png",     // 6784 x 4840
+    image: "deltarune_school.png",
     w: 6784, h: 4840,
     zoom: 0.5,
     spriteH: 230,
     spawn: { x: 3504, y: 4700, dir: "up" },
     walkable: Object.values(schoolRooms),
     blockers: [
-      // lobby couch (y2 = couch bottom 2999.6 minus FEET_H so her feet can reach its bottom edge)
       { x1: 3173, x2: 3821, y1: 2464, y2: 2969.6 },
     ],
-    // Standing characters that move slowly in place. Sheets: PNG with the frames side by side
-    // (frame positions are found automatically). x,y = where their FEET are, h = drawn height.
-    // frames = how many frames the sheet has. slots = (only needed when opening by double-click) how many equal
-    // slots the sheet is cut into, counting empty ones. solid:true = she can't walk through them.
     npcs: [
       { name: "mario",  image: "mario.png",  frames: 4, x: 2277, y: 590,  h: 292,
-        lines: wrapPages("Are you sure you want to go in there? People have been in there, and both their mental health and their class scores are down. I'm here to warn you, but go ahead.") },   // higher hall, left door
+        lines: wrapPages("Are you sure you want to go in there? People have been in there, and both their mental health and their class scores are down. I'm here to warn you, but go ahead.") },
       { name: "guy",    image: "guy.png",    frames: 2, slots: 4, x: 1288, y: 3315, h: 304,
-        lines: ["Wait, I know Chinese! " + "Bingqilin ".repeat(14).trim()] },   // left hall, next to the lockers
+        lines: ["Wait, I know Chinese! " + "Bingqilin ".repeat(14).trim()] },
       { name: "grinch", image: "grinch.png", frames: 4, x: 3497, y: 3085, h: 375,
-        lines: ["Shhh, I'm stealing their vending machine. It's the closest thing to Christmas here."] },   // in front of the couch
+        lines: ["Shhh, I'm stealing their vending machine. It's the closest thing to Christmas here."] },
       { name: "bear",   image: "bear.png",   frames: 2, slots: 4, x: 3920, y: 2689, h: 315,
-        lines: ["Are you new here? You know wearing a tie is mandatory at least once a week, right?"] },   // right of the couch
+        lines: ["Are you new here? You know wearing a tie is mandatory at least once a week, right?"] },
       { name: "girl",   image: "girl.png",   frames: 4, x: 3980, y: 2808, h: 209,
-        lines: ["گفتی شیمی می‌خونی پس؟ اها؟ چینی؟"] },   // right of the couch
+        lines: ["گفتی شیمی می‌خونی پس؟ اها؟ چینی؟"] },
       { name: "ness",   image: "ness.png",   frames: 2, slots: 4, x: 5247, y: 3330, h: 245,
-        lines: ["Friendly tip: always keep a copy of your documents. Always. Trust me."] },   // right hall, by the map
+        lines: ["Friendly tip: always keep a copy of your documents. Always. Trust me."] },
     ],
-    // 45-degree cut at the LEFT END of the left hall (next to door 114): everything up-left of the line
-    // x + y = sum is blocked. Line goes from (99.14, 3560) up-right to (419.14, 3240).
-    // The lockers behind it are interactable (see "diagonal lockers" below).
     slants: [
       { sum: 3659.14, x1: 99.14, x2: 419.14, y1: 3240, y2: 3560 },
     ],
     interact: [
-      // lockers on the wall of the left hall (all share the same y). Locker 4 = the gap between 3 and 5.
       { name: "locker 1", x1: 1668.00, x2: 1824.63, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["It's rude to peek into other people's lockers. Let's walk away."] },
       { name: "locker 2", x1: 1506.13, x2: 1668.00, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["It's rude to peek into other people's lockers. Let's walk away."] },
       { name: "locker 3", x1: 1346.91, x2: 1506.13, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["Li Laoshi's abandoned locker. There is still a mango juice inside. Legends say she once walked these halls, though nobody remembers when."] },
       { name: "locker 4", x1: 1188.53, x2: 1346.91, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["Full of old HSK practice papers. Somebody really wanted that Level 4."] },
       { name: "locker 5", x1: 1025.93, x2: 1188.53, y1: 2855.17, y2: 3240.94, reach: 40, lines: ["It's stuck. Maybe it's stuck forever."] },
-      // lockers behind the 45-degree border (she can't step on it, but can talk to them)
       { name: "diagonal lockers", x1: 99.14, x2: 419.14, y1: 2855.17, y2: 3560, sum: 3659.14, reach: 40,
         lines: ["These lockers are at a weird angle. Nobody knows why. The architects stay silent."] },
-      // boards, fountain, map on the wall
       { name: "board 1", x1: 2112.45, x2: 2566.07, y1: 2865.26, y2: 3159.15, reach: 90, lines: [
         ...wrapPages("NOTICE: A welcome ceremony for the incoming 1405 class of Chinese language students will be held with the presence of professors and student organizations of the faculty."),
         "* Time: Tuesday, 1405/09/10\n  (December 1, 2026)\n  11:40 - 12:55",
@@ -197,13 +170,11 @@ const LOCATIONS = {
           talk = { lines: fixLines(sel === 0 ? L("You drink some water. Not the cold, fresh type. Just... water.", "你喝了点水。不是那种冰凉清爽的水。就只是……水。") : L("You walk away thirsty.", "你渴着走开了。")), i: 0, shown: 0 };
         }) },
       { name: "map", x1: 5345.20, x2: 6143.95, y1: 2858.35, y2: 3238.56, reach: 40, lines: ["Persian Gulf.", "And the same name written in so many other languages."] },
-      // lobby couch (in the main hall)
       { name: "lobby couch", x1: 3173, x2: 3821, y1: 2464, y2: 2999.60, lines: [
         "* Oh, the core of Zabanha.",
         ...wrapPages("You are now truly one of us! We were too tired to add the Ping-Pong table."),
         "* You'll see it soon enough\n  tho.",
       ] },
-      // the second door in the higher hall: interaction only for now
       { name: "door", x1: 5048.94, x2: 5312.83, y1: 81.34, y2: 512.08,
         lines: [
           "* The staff room.",
@@ -211,27 +182,22 @@ const LOCATIONS = {
         ] },
     ],
     exits: [
-      // door to room 114 (bottom extended to 3245 so it overlaps the left hall)
       { x1: 567.99, x2: 831.95, y1: 2800.06, y2: 3245,
         to: "room114", spawn: { x: 1053, y: 400, dir: "down" } },
-      // door to the kongzi room (bottom extended to 3245 so it overlaps the right hall)
       { x1: 6327.74, x2: 6593.06, y1: 2800.57, y2: 3245,
         to: "kongzi", spawn: { x: 713, y: 480, dir: "down" } },
-      // boss fight door (bottom extended to 530 so it overlaps the higher hall, which now starts at 519.87)
       { x1: 1687.89, x2: 1952.13, y1: 80.18, y2: 530,
         battle: true, spawn: { x: 1820, y: 700, dir: "down" } },
-      // black door = ENDING (asks "are you sure?"; bottom extended to 530 so it overlaps the hall)
       { x1: 3328.59, x2: 3682.36, y1: 61.25, y2: 530, ending: true },
     ],
   },
 
   room114: {
-    image: "114.png",                  // 1217 x 975
+    image: "114.png",
     w: 1217, h: 975,
     zoom: "fit",
-    spriteH: 170,                      // tweak to taste
+    spriteH: 170,
     spawn: { x: 1053, y: 400, dir: "down" },
-    // shown once, the first time she walks in
     enter: [
       "* Welcome to room 114!",
       ...wrapPages("You're going to have a lot of classes here. Most Chinese classes are held in this room."),
@@ -240,48 +206,34 @@ const LOCATIONS = {
     walkable: [
       { x1: 10.01, x2: 1208.98, y1: 258.03, y2: 965.99 },
     ],
-    // Characters standing in the classroom (same format as the school's npcs).
-    // x = centre of the drawn sprite, y = feet. hitX = where the solid box / Z-area is centred if that is
-    // not the sprite centre (the prof's pointer stick makes his sprite wider than his body).
     npcs: [
       { name: "prof",     image: "prof.png",     frames: 2, slots: 4, x: 285, y: 375, h: 285, hitX: 230, hitW: 150, lines: ["wo de mao..."] },
       { name: "redboy",   image: "redboy.png",   frames: 4, x: 757, y: 572, h: 197, lines: ["* Cappuccino...\n  Cappuccino....\n  Cappuccino after 11am...."] },
       { name: "blondboy", image: "blondboy.png", frames: 4, x: 372, y: 938, h: 201, lines: ["* I'm starving... T-T"] },
       { name: "blueboy",  image: "blueboy.png",  frames: 4, x: 914, y: 925, h: 203, lines: ["* What's for lunch?"] },
     ],
-    // Overlays = PNGs the same size as the room with ONLY the objects visible (rest transparent).
-    // Each band is a horizontal slice of the PNG (y1..y2). The slice is drawn OVER her while her feet Y is
-    // inside its zone's y1..y2 (= she is behind it, at any x); otherwise it is drawn UNDER her.
     overlays: [
       { image: "desk.png", bands: [
-        { y1: 0, y2: 975, zone: { x1: 301.85, x2: 801.32, y1: 258.94, y2: 355.05 } },      // teacher desk
+        { y1: 0, y2: 975, zone: { x1: 301.85, x2: 801.32, y1: 258.94, y2: 355.05 } },
       ]},
       { image: "student.png", bands: [
-        { y1: 0,     y2: 609.5, zone: { x1: 152.81, x2: 1036.41, y1: 466,    y2: 496.04 } },  // row 1
-        { y1: 609.5, y2: 753,   zone: { x1: 152.81, x2: 1036.41, y1: 617,    y2: 647 } },     // row 2
-        { y1: 753,   y2: 975,   zone: { x1: 152.81, x2: 1036.41, y1: 752.89, y2: 802 } },     // row 3
+        { y1: 0,     y2: 609.5, zone: { x1: 152.81, x2: 1036.41, y1: 466,    y2: 496.04 } },
+        { y1: 609.5, y2: 753,   zone: { x1: 152.81, x2: 1036.41, y1: 617,    y2: 647 } },
+        { y1: 753,   y2: 975,   zone: { x1: 152.81, x2: 1036.41, y1: 752.89, y2: 802 } },
       ]},
     ],
     blockers: [
-      // teacher desk: only the FRONT part blocks, so she can walk behind it
       { x1: 311.01, x2: 767.10, y1: 355.05, y2: 417.90 },
-      // student desks: only the front part blocks (the strip behind each row is walkable).
-      // y2 is the desk bottom minus FEET_H so her feet can reach the desk's bottom edge.
-      // row 1
       { x1: 155.89, x2: 344.97,  y1: 496.04, y2: 571.94 },
       { x1: 494.87, x2: 684.98,  y1: 496.04, y2: 571.94 },
       { x1: 824.95, x2: 1015.00, y1: 496.04, y2: 571.94 },
-      // row 2
       { x1: 156.00, x2: 345.23,  y1: 647, y2: 723.06 },
       { x1: 494.94, x2: 685.01,  y1: 647, y2: 723.06 },
       { x1: 825.01, x2: 1014.98, y1: 647, y2: 723.06 },
-      // row 3
       { x1: 155.89, x2: 344.97,  y1: 802, y2: 877.92 },
       { x1: 494.87, x2: 684.98,  y1: 802, y2: 877.92 },
       { x1: 824.95, x2: 1015.00, y1: 802, y2: 877.92 },
     ],
-    // Z-key dialogue. Stand next to / facing the object and press Z.
-    // lines = pages of text (one page per entry, use \n for a 2nd line). reach = how far away she can be.
     interact: [
       { name: "teacher desk", x1: 311.01, x2: 767.10, y1: 213.96, y2: 417.90,
         lines: ["Stacks of papers and one very suspicious red pen."] },
@@ -291,34 +243,28 @@ const LOCATIONS = {
         lines: wrapPages("It's a clock. An object that seems to freeze time during TingLi classes.") },
       { name: "wall notes", x1: 24.62, x2: 185.19, y1: 53.96, y2: 228.93, reach: 40,
         lines: ["Schedules. Check often, rooms change without warning."] },
-      // student desks, row 1
       { name: "student desk 1", x1: 155.89, x2: 344.97,  y1: 466.01, y2: 601.94, lines: wrapPages("Yeah, that's Professor Vafaei...") },
       { name: "student desk 2", x1: 494.87, x2: 684.98,  y1: 466.01, y2: 601.94, lines: ["* ZzzzzZzzz"] },
       { name: "student desk 3", x1: 824.95, x2: 1015.00, y1: 466.01, y2: 601.94, lines: ["* They seem to be busy\n  taking notes."] },
-      // row 2
       { name: "student desk 4", x1: 156.00, x2: 345.23,  y1: 617.03, y2: 753.06, lines: ["* 一些年，一个人🎵", "* They seem to be singing\n  something in Chinese."] },
       { name: "student desk 5", x1: 494.94, x2: 685.01,  y1: 617.03, y2: 753.06, lines: ["* My cat drinks Cappuccino."] },
       { name: "student desk 6", x1: 825.01, x2: 1014.98, y1: 617.03, y2: 753.06, lines: ["There are Chinese words engraved here. You can't read them yet, try again in two years."] },
-      // row 3
       { name: "student desk 7", x1: 155.89, x2: 344.97,  y1: 752.89, y2: 907.92, lines: ["A chair. And a table. Nothing more."] },
       { name: "student desk 8", x1: 494.87, x2: 684.98,  y1: 752.89, y2: 907.92, lines: ["You sit on it. It's still warm.", "Then you quickly stand up the second it starts creaking under your weight."] },
       { name: "student desk 9", x1: 824.95, x2: 1015.00, y1: 752.89, y2: 907.92, lines: ["* There's a broken chair.\n  You find a note on it.", "* \"Spanish Major was here.\""] },
     ],
     exits: [
-      // the door in this room leads back to the school
-      // (bottom extended to 262 so it overlaps the floor)
       { x1: 970.98, x2: 1136.05, y1: 34.03, y2: 262,
         to: "school", spawn: { x: 700, y: 3400, dir: "down" } },
     ],
   },
 
   kongzi: {
-    image: "kongzi.png",               // 1428 x 1083
+    image: "kongzi.png",
     w: 1428, h: 1083,
     zoom: "fit",
-    spriteH: 190,                      // tweak to taste
+    spriteH: 190,
     spawn: { x: 713, y: 480, dir: "down" },
-    // shown once, the first time she walks in
     enter: [
       ...wrapPages("The Confucius Institute is a bridge between the Chinese language and culture and the rest of the world."),
       ...wrapPages("This is the library. It is the only library of the Confucius Institute in Iran."),
@@ -327,32 +273,26 @@ const LOCATIONS = {
     walkable: [
       { x1: 13.50, x2: 1414.22, y1: 345.80, y2: 1070.11 },
     ],
-    // Overlay PNGs (same size as the room, only the object visible). Each is drawn OVER her while her
-    // feet are inside its zone (she is behind it), otherwise UNDER her.
     overlays: [
       { image: "book2.png", bands: [
-        { y1: 0, y2: 1083, zone: { x1: 12.92, x2: 469.00, y1: 429.02, y2: 756.24 } },        // fully behind
+        { y1: 0, y2: 1083, zone: { x1: 12.92, x2: 469.00, y1: 429.02, y2: 756.24 } },
       ]},
       { image: "stand.png", bands: [
-        { y1: 0, y2: 1083, zone: { x1: 940.44, x2: 1414.01, y1: 463.99, y2: 767.89 } },      // fully behind
+        { y1: 0, y2: 1083, zone: { x1: 940.44, x2: 1414.01, y1: 463.99, y2: 767.89 } },
       ]},
       { image: "reception.png", bands: [
-        { y1: 0, y2: 1083, zone: { x1: 12.33, x2: 509.02, y1: 808.01, y2: 865.40 } },        // strip behind the counter
+        { y1: 0, y2: 1083, zone: { x1: 12.33, x2: 509.02, y1: 808.01, y2: 865.40 } },
       ]},
       { image: "library desk.png", bands: [
-        { y1: 0, y2: 1083, zone: { x1: 999.97, x2: 1302.95, y1: 835.91, y2: 884.56 } },      // strip behind the desk
+        { y1: 0, y2: 1083, zone: { x1: 999.97, x2: 1302.95, y1: 835.91, y2: 884.56 } },
       ]},
     ],
     blockers: [
-      // book2 + stand: she can walk BEHIND them (open from the top and the side), but a thin wall along
-      // the bottom edge stops her passing through from the front. (y2 = object bottom - FEET_H)
-      { x1: 12.92,  x2: 469.00,  y1: 724.24, y2: 726.24 },     // book2 front
-      { x1: 940.44, x2: 1414.01, y1: 735.89, y2: 737.89 },     // stand front
-      // reception + library desk: only the FRONT part blocks (the strip behind is walkable)
-      { x1: 12.93,  x2: 503.98,  y1: 865.40, y2: 1040.96 },    // reception
-      { x1: 999.97, x2: 1302.95, y1: 884.56, y2: 1035.27 },    // library desk
+      { x1: 12.92,  x2: 469.00,  y1: 724.24, y2: 726.24 },
+      { x1: 940.44, x2: 1414.01, y1: 735.89, y2: 737.89 },
+      { x1: 12.93,  x2: 503.98,  y1: 865.40, y2: 1040.96 },
+      { x1: 999.97, x2: 1302.95, y1: 884.56, y2: 1035.27 },
     ],
-    // Z-key dialogue (same format as room114). Fill in the text later.
     interact: [
       { name: "book1",        x1: 13.87,  x2: 439.03,  y1: 43.94,  y2: 371.03,  cycle: ["* The True Story of Ah Q\n  - Lu Xun", "* Dream of the Red Chamber\n  - Cao Xueqin", "* Legend of Hua Mulan"] },
       { name: "book2",        x1: 12.92,  x2: 469.00,  y1: 429.02, y2: 756.24,  cycle: ["* The Frog in the Well", "* Mr. Bazrafshan's old book.\n  It has a :( on it."] },
@@ -362,17 +302,12 @@ const LOCATIONS = {
       { name: "stairs",       x1: 936.19, x2: 1413.95, y1: 20.62,  y2: 375.69,  lines: wrapPages("We have a Confucius Institute office on the 3rd floor. But that's for another game, for another day.") },
     ],
     exits: [
-      // the door in this room leads back to the school
-      // (bottom extended to 350 so it overlaps the floor)
       { x1: 584.92, x2: 841.63, y1: 60.90, y2: 350,
         to: "school", spawn: { x: 6460, y: 3400, dir: "down" } },
     ],
   },
 };
 
-/* ================= AUTO-WRAP =================
-   Every dialogue page is re-flowed so it always fits the box. Long text simply continues on the next page.
-   You can write plain text (no "* " and no \n needed). */
 function fixLines(arr) {
   return [].concat(arr).flatMap(l => wrapPages(String(l).replace(/\s*\n\s*/g, " ").replace(/^\*\s*/, "").trim()));
 }
@@ -386,7 +321,6 @@ function fixAllDialogue() {
   }
 }
 
-/* ================= SETUP ================= */
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -406,10 +340,7 @@ for (const loc of Object.values(LOCATIONS)) {
   loc.bg = loadImg(loc.image);
   for (const ov of loc.overlays || []) ov.img = loadImg(ov.image);
 }
-/* ---------- Standing characters (NPCs) ----------
-   A sheet = frames side by side. Frames are found automatically by looking for empty columns,
-   so the sheet may have extra empty space; `frames` tells the game how many there are. */
-const NPC_FRAME_TIME = 0.55;      // seconds per frame (bigger = slower)
+const NPC_FRAME_TIME = 0.55;
 
 function detectFrames(img, n, npc) {
   const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
@@ -417,8 +348,6 @@ function detectFrames(img, n, npc) {
   let d;
   try { d = g.getImageData(0, 0, c.width, c.height).data; }
   catch (e) {
-    // Opened by double-clicking index.html (file://): the browser forbids reading pixels.
-    // Fallback: cut the sheet into equal slots (npc.slots = total slots incl. empty ones, default = frames).
     console.warn("NPC " + npc.name + ": can't scan pixels on file://, using equal slots. Run from a local server / GitHub Pages for auto-detect.");
     const slots = npc.slots ?? n, w = img.width / slots;
     return { frames: Array.from({ length: n }, (_, i) => ({ sx: Math.round(i * w), sw: Math.round(w) })), top: 0, bottom: img.height - 1 };
@@ -429,16 +358,16 @@ function detectFrames(img, n, npc) {
     if (d[(y * c.width + x) * 4 + 3] > 10) { col[x] = true; if (y < top) top = y; if (y > bottom) bottom = y; }
   }
   if (bottom < 0) return null;
-  let runs = [];                                   // runs of non-empty columns
+  let runs = [];
   for (let x = 0; x < c.width; x++) if (col[x]) {
     if (runs.length && runs[runs.length - 1].e === x - 1) runs[runs.length - 1].e = x; else runs.push({ s: x, e: x });
   }
-  while (runs.length > n) {                        // too many pieces: join across the smallest gap
+  while (runs.length > n) {
     let k = 0, best = Infinity;
     for (let i = 0; i < runs.length - 1; i++) { const gap = runs[i + 1].s - runs[i].e; if (gap < best) { best = gap; k = i; } }
     runs.splice(k, 2, { s: runs[k].s, e: runs[k + 1].e });
   }
-  if (runs.length < n) {                           // frames touch each other: split evenly
+  if (runs.length < n) {
     const s0 = runs[0].s, e0 = runs[runs.length - 1].e, w = (e0 - s0 + 1) / n;
     runs = Array.from({ length: n }, (_, i) => ({ s: Math.round(s0 + i * w), e: Math.round(s0 + (i + 1) * w) - 1 }));
   }
@@ -451,9 +380,7 @@ for (const loc of Object.values(LOCATIONS)) {
     n.img.onload = () => { n.info = detectFrames(n.img, n.frames || 1, n); };
     n.img.onerror = () => console.warn("Could not load image:", n.image);
     n.img.src = n.image;
-    n.phase = i * 0.37;                            // so they don't all move in sync
-    // Z-key dialogue: stand next to them and press Z. Set lines: [...] on the character to change the text.
-    // (counts like any other interaction for the ending message)
+    n.phase = i * 0.37;
     (loc.interact = loc.interact || []).push({
       name: n.name, x1: (n.hitX ?? n.x) - (n.hitW ? n.hitW * 0.67 : n.h * 0.3), x2: (n.hitX ?? n.x) + (n.hitW ? n.hitW * 0.67 : n.h * 0.3),
       y1: n.y - n.h, y2: n.y, reach: n.reach ?? 25,
@@ -462,7 +389,7 @@ for (const loc of Object.values(LOCATIONS)) {
   }
 }
 fixAllDialogue();
-function npcBox(n) {                               // solid box at their feet
+function npcBox(n) {
   const w = n.hitW ?? n.h * 0.45, cx = n.hitX ?? n.x;
   return { x1: cx - w / 2, x2: cx + w / 2, y1: n.y - FEET_H, y2: n.y };
 }
@@ -473,7 +400,7 @@ function drawNpc(n, t) {
   ctx.drawImage(n.img, f.sx, top, f.sw, sh, n.x - w / 2, n.y - n.h, w, n.h);
 }
 let npcClock = 0;
-document.fonts.load("26px DeterminationMono");   // make sure the battle font is ready
+document.fonts.load("26px DeterminationMono");
 
 const still = {}, walk = {};
 for (const d of ["down", "up", "left", "right"]) {
@@ -484,12 +411,10 @@ for (const d of ["down", "up", "left", "right"]) {
 const keys = {};
 let debug = false;
 addEventListener("keydown", e => {
-  // typing the name: the game ignores every key except Enter (typing goes to the hidden text box)
   if (nameTyping) { if (e.key === "Enter" && !e.isComposing) finishName(); return; }
   keys[e.key.toLowerCase()] = true;
   if (!e.repeat) pressed[e.key.toLowerCase()] = true;
   if (e.key.toLowerCase() === "g") debug = !debug;
-  // TEST KEY: press B in the world to start the boss fight (remove once you have a door)
   if (e.key.toLowerCase() === "b" && mode === "world" && fade.state === "none" && !talk)
     startBattle({ x: player.x, y: player.y, dir: player.dir });
   if (e.key.startsWith("Arrow")) e.preventDefault();
@@ -499,12 +424,10 @@ addEventListener("keyup", e => (keys[e.key.toLowerCase()] = false));
 let cur = LOCATIONS[START];
 const player = { x: cur.spawn.x, y: cur.spawn.y, dir: cur.spawn.dir, moving: false, t: 0 };
 let camX = 0, camY = 0;
-let talk = null;   // active dialogue: { lines, i, shown }
+let talk = null;
 
-// fade between locations
 const fade = { state: "none", a: 0, exit: null };
 
-/* ================= COLLISION ================= */
 
 const walkAreas = () => [...cur.walkable, ...cur.exits];
 
@@ -524,16 +447,13 @@ function canStand(x, y) {
     const o = npcBox(n);
     if (r > o.x1 && l < o.x2 && b > o.y1 && t < o.y2) return false;
   }
-  // 45-degree borders: her top-left corner may not cross the line x + y = sum
   for (const sl of cur.slants || []) {
     if (r > sl.x1 && l < sl.x2 && b > sl.y1 && t < sl.y2 && (l + t) < sl.sum) return false;
   }
   return true;
 }
 
-/* ================= INTERACTION ================= */
 
-// how many interactions she has checked (across ALL rooms)
 function interactStats() {
   let total = 0, seen = 0;
   for (const loc of Object.values(LOCATIONS))
@@ -541,7 +461,6 @@ function interactStats() {
   return { total, seen };
 }
 
-// Yes/No question in the dialogue box
 function ask(text, opts, cb, vertical) {
   talk = { lines: [text], i: 0, shown: 0, choice: { opts, sel: 0, cb, vertical: !!vertical } };
   player.moving = false; player.t = 0;
@@ -549,7 +468,7 @@ function ask(text, opts, cb, vertical) {
 
 function askEnding(ex) {
   ask(L("* Are you sure you want\n  to finish?", "* 确定要结束了吗？"), L(["Yes", "No"], ["是", "否"]), sel => {
-    if (sel === 1) { player.y = ex.y2 + 70; player.dir = "down"; return; }   // step back out of the door
+    if (sel === 1) { player.y = ex.y2 + 70; player.dir = "down"; return; }
     const { total, seen } = interactStats();
     let msg;
     if (seen === 0)              msg = L("* So why did you even play?", "* 那你到底为什么要玩呢？");
@@ -564,18 +483,17 @@ const DIRV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
 function tryInteract() {
   const [vx, vy] = DIRV[player.dir];
-  const px = player.x + vx * 45, py = player.y - FEET_H / 2 + vy * 45;   // point in front of her
+  const px = player.x + vx * 45, py = player.y - FEET_H / 2 + vy * 45;
   let best = null, bestD = Infinity;
   for (const o of cur.interact || []) {
     const ddx = Math.max(o.x1 - px, 0, px - o.x2), ddy = Math.max(o.y1 - py, 0, py - o.y2);
     const d = Math.hypot(ddx, ddy);
-    // slanted objects: the point in front of her must also be close to the 45-degree line
     if (o.sum !== undefined && px + py > o.sum + (o.reach ?? 20) * Math.SQRT2) continue;
     if (d <= (o.reach ?? 20) && d < bestD) { best = o; bestD = d; }
   }
   if (!best) return;
   if (best.run) { best.seen = true; best.run(best); return; }
-  if (best.cycle) {                                   // each press shows the next entry
+  if (best.cycle) {
     best.seen = true; best.n = best.n || 0;
     talk = { lines: best.cycle[best.n % best.cycle.length], i: 0, shown: 0 }; best.n++;
     return;
@@ -583,20 +501,14 @@ function tryInteract() {
   if (best.lines && best.lines.length) { best.seen = true; talk = { lines: best.lines, i: 0, shown: 0 }; }
 }
 
-/* ================= GUIDE (the main NPC) =================
-   Files next to index.html: walkdown/walkup/walkleft/walkright.png (4 frames each)
-   and standdown/standup/standleft/standright.png.
-   When she walks into the main hall of the school for the first time she stops, the guide walks down
-   from the top, stands in front of her and talks. If she says Yes the guide follows her everywhere
-   (all rooms); if she says No the guide walks away to the door of room 114 and disappears. */
 const GUIDE = {
-  speed: 420,                    // walking speed in the cutscene
-  follow: 170,                   // how far (px along her path) the guide stays behind her when following
-  scale: 1.25,                   // size compared to her (1 = same height as her)
-  triggerY: 3800,                // she stops when her feet pass this Y in the school (main hall)
-  start: { x: 3060, y: 2200 },   // where the guide walks in from (the lane left of the couch, above the screen)
-  gap: 170,                      // how far in front of her the guide stops
-  leave: [{ x: 3060, y: 3420 }, { x: 700, y: 3420 }, { x: 700, y: 3250 }],   // way to the door of room 114
+  speed: 420,
+  follow: 170,
+  scale: 1.25,
+  triggerY: 3800,
+  start: { x: 3060, y: 2200 },
+  gap: 170,
+  leave: [{ x: 3060, y: 3420 }, { x: 700, y: 3420 }, { x: 700, y: 3250 }],
 };
 const gStill = {}, gWalk = {};
 for (const d of ["down", "up", "left", "right"]) { gStill[d] = loadImg("stand" + d + ".png"); gWalk[d] = loadImg("walk" + d + ".png"); }
@@ -604,9 +516,8 @@ const guide = { mode: "hidden", x: 0, y: 0, dir: "down", moving: false, t: 0, id
 let lockInput = false;
 const locName = () => Object.keys(LOCATIONS).find(k => LOCATIONS[k] === cur);
 
-// cuts a text into dialogue pages: "* " on the first line, 3 lines per page, ~30 letters per line
 function wrapPages(text, width = 30, maxLines = 3) {
-  if (/[\u3000-\u9fff\uff00-\uffef]/.test(text)) return wrapPagesZh(text, maxLines);   // Chinese text has its own wrapper
+  if (/[\u3000-\u9fff\uff00-\uffef]/.test(text)) return wrapPagesZh(text, maxLines);
   const lines = []; let line = "* ";
   for (const w of text.split(" ")) {
     if (line.trim().length > 1 && (line + w).length > width) { lines.push(line.trimEnd()); line = "  " + w + " "; }
@@ -616,17 +527,14 @@ function wrapPages(text, width = 30, maxLines = 3) {
   const pages = [];
   for (let i = 0; i < lines.length; i += maxLines) {
     const part = lines.slice(i, i + maxLines);
-    if (i > 0) part[0] = "* " + part[0].trimStart();            // a new page starts with "* " again
+    if (i > 0) part[0] = "* " + part[0].trimStart();
     pages.push(part.join("\n"));
   }
   return pages;
 }
-/* ---------- Chinese support ----------
-   LANG is chosen at the start of the game ("en" or "zh"). L(english, chinese) returns the right one. */
 let LANG = "en";
 function L(en, zh) { return LANG === "zh" ? zh : en; }
 
-// breaks Chinese text into lines no wider than capEm (one Chinese character = 1, one Latin letter/digit = 0.6)
 function zhBreak(text, capEm) {
   const lines = [];
   for (const para of String(text).split("\n")) {
@@ -635,9 +543,9 @@ function zhBreak(text, capEm) {
       const space = /^\s$/.test(t);
       if (space && !cur) continue;
       let tw = 0; for (const c of t) tw += c.charCodeAt(0) < 256 ? 0.6 : 1;
-      const closing = /^[，。、！？；：）》」』”’…—!?,.;:)]/.test(t);          // may hang over the edge instead of starting a line
+      const closing = /^[，。、！？；：）》」』”’…—!?,.;:)]/.test(t);
       if (cur && !space && w + tw > capEm && !(closing && w + tw <= capEm + 1)) {
-        let carry = ""; const m = cur.match(/[（《「『“‘]$/);                 // an opening bracket never ends a line
+        let carry = ""; const m = cur.match(/[（《「『“‘]$/);
         if (m) { carry = m[0]; cur = cur.slice(0, -1); }
         lines.push(cur.trimEnd()); cur = carry; w = carry ? 1 : 0;
       }
@@ -647,7 +555,6 @@ function zhBreak(text, capEm) {
   }
   return lines;
 }
-// same pages as wrapPages, for Chinese: "* " on the first line of a page, 3 lines per page, about 18 characters per line
 function wrapPagesZh(text, maxLines = 3) {
   const ls = zhBreak(text, 18.4), pages = [];
   for (let i = 0; i < ls.length; i += maxLines)
@@ -714,12 +621,10 @@ function updateGuide(dt) {
     if (!guide.path.length) { guide.moving = false; const f = guide.onArrive; guide.onArrive = null; if (f) f(); }
   } else if (guide.mode === "follow") {
     const P = { x: player.x, y: player.y }, name = locName(), tr = guide.trail, last = tr[tr.length - 1];
-    // new room (or she was moved far away, e.g. after the fight): the guide steps out with her
     if (guide.loc !== name || !last || Math.hypot(P.x - last.x, P.y - last.y) > 400) {
       guide.loc = name; guide.trail = [P]; guide.x = P.x; guide.y = P.y; guide.moving = false; guide.idle = 1; return;
     }
     if (Math.hypot(P.x - last.x, P.y - last.y) >= 6) tr.push(P);
-    // the guide stands GUIDE.follow px behind her, measured along the path she walked
     let ax = P.x, ay = P.y, rem = GUIDE.follow, tx = tr[0].x, ty = tr[0].y, at = 0;
     for (let i = tr.length - 1; i >= 0; i--) {
       const b = tr[i], d = Math.hypot(b.x - ax, b.y - ay);
@@ -748,9 +653,6 @@ function drawGuide() {
   }
 }
 
-/* ================= PHONE CONTROLS =================
-   On touch screens: a joystick on the LEFT (walk / menus) and the Z (talk / confirm) and X (back) buttons
-   on the RIGHT. They simply press the same keys as the keyboard, so everything else works unchanged. */
 let touchOn = false;
 const touchEl = document.getElementById("touch");
 function showTouch() { if (!touchOn) { touchOn = true; touchEl.classList.add("on"); } }
@@ -758,7 +660,6 @@ if (matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0) sho
 addEventListener("pointerdown", e => { if (e.pointerType === "touch") showTouch(); }, { passive: true });
 addEventListener("contextmenu", e => { if (touchOn) e.preventDefault(); });
 
-// press a key like the keyboard would (held = keys[], one-tap = pressed[])
 function tkey(name, down) {
   if (down && !keys[name]) pressed[name] = true;
   keys[name] = down;
@@ -771,9 +672,9 @@ function tkey(name, down) {
     const b = stick.getBoundingClientRect(), R = b.width / 2;
     let vx = e.clientX - (b.left + R), vy = e.clientY - (b.top + R);
     const len = Math.hypot(vx, vy);
-    if (len > R) { vx *= R / len; vy *= R / len; }                 // keep the nub inside the circle
+    if (len > R) { vx *= R / len; vy *= R / len; }
     nub.style.transform = `translate(calc(-50% + ${vx}px), calc(-50% + ${vy}px))`;
-    const t = R * 0.3;                                              // small dead zone in the middle
+    const t = R * 0.3;
     setDirs(vx < -t, vx > t, vy < -t, vy > t);
   }
   function release() {
@@ -790,19 +691,12 @@ function tkey(name, down) {
     const up = () => { el.classList.remove("down"); tkey(key, false); };
     el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
   }
-  // OK button on the name screen (the phone keyboard's Enter key works too)
   document.getElementById("btnOK").addEventListener("pointerdown", e => { finishName(); e.preventDefault(); });
-  // show/hide the typing layout
   setInterval(() => touchEl.classList.toggle("typing", nameTyping), 100);
 }
 
-/* ================= WELCOME QUESTIONS (when the game starts) =================
-   Name -> how do you identify -> home or dorms -> the game starts.
-   Her answers are saved in `profile` (profile.name / profile.gender / profile.home). */
 const profile = { name: "", gender: "", home: "" };
 
-/* ================= INVENTORY (press X in the world) =================
-   maleOnly:true = only shown if she answered "Male" in the welcome questions. */
 const INV_FONT = "RadioFill, Tahoma, 'Segoe UI', Arial, sans-serif";
 const INVENTORY = [
   { fa: "اصل دیپلم (موقت)" },
@@ -822,7 +716,6 @@ const nameInput = document.createElement("input");
 nameInput.type = "text"; nameInput.maxLength = 14; nameInput.autocomplete = "off"; nameInput.spellcheck = false;
 nameInput.style.cssText = "position:fixed;left:-300px;top:0;opacity:0;width:200px;font-size:16px;";
 document.body.appendChild(nameInput);
-// no Persian / Arabic letters in the name: they are removed as soon as they are typed or pasted
 const FARSI_RE = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufeff]/g;
 nameInput.addEventListener("input", () => { if (FARSI_RE.test(nameInput.value)) nameInput.value = nameInput.value.replace(FARSI_RE, ""); FARSI_RE.lastIndex = 0; });
 for (const ev of ["pointerdown", "click", "touchend"]) addEventListener(ev, () => { if (nameTyping) nameInput.focus(); });
@@ -842,12 +735,12 @@ function startWelcome() {
 }
 function finishName() {
   const n = nameInput.value.trim();
-  if (!n) return;                                   // needs at least one letter
+  if (!n) return;
   const low = n.toLowerCase().replace(/[^a-z\u0600-\u06ff ]/g, "").replace(/\s+/g, " ").trim();
   const reask = text => { nameTyping = false; nameInput.blur(); guideSay(text, () => { nameTyping = true; nameInput.value = ""; nameInput.focus(); }); };
   if (low.replace(/ /g, "") === "frisk") return reask(L("Oh, you know ball.", "哦，你很懂嘛。"));
-  const BAD_ANY = ["fuck", "shit", "bitch", "cunt"];              // blocked anywhere inside the name
-  const BAD_WORD = ["kir", "kos", "کیر", "کوس"];                   // blocked only as a whole word (so Kosar / Akira are fine)
+  const BAD_ANY = ["fuck", "shit", "bitch", "cunt"];
+  const BAD_WORD = ["kir", "kos", "کیر", "کوس"];
   if (BAD_ANY.some(w => low.replace(/ /g, "").includes(w)) || low.split(" ").some(w => BAD_WORD.includes(w))) return reask(L("Nope.", "不行。"));
   profile.name = n; nameTyping = false; nameInput.blur();
   guideSay(L("Nice to meet you, " + n + "! Just one more thing.", "真高兴我们终于见到你了，" + n + "！还有几个小问题。"), askHome);
@@ -879,9 +772,6 @@ function drawNameEntry() {
   ctx.fillText(touchOn ? L("Tap the screen to type, then press OK", "点击屏幕输入名字，然后按 OK") : L("Press ENTER to confirm", "按回车键确认"), W / 2, H * 0.66);
   ctx.textAlign = "left";
 }
-/* ================= CHINESE TEXT =================
-   Used when "中文" is chosen at the start. Same objects / characters as the English text above (looked up by name).
-   One entry = one page of dialogue (it is wrapped automatically). \n = a forced line break. */
 const ZH_TEXT = {
   school: {
     "mario": ["你确定要进去吗？进去过的人，心理健康和课程成绩都下降了。我只是来提醒你的，不过你请便吧。"],
@@ -962,7 +852,6 @@ function applyLanguage() {
   document.getElementById("rotate").textContent = "把手机横过来效果最佳（点击隐藏）";
 }
 
-// first thing in the game: choose the language
 function startLanguage() {
   lockInput = true;
   ask("* Choose your language.\n  请选择你的语言。", ["English", "中文"], sel => {
@@ -973,12 +862,10 @@ function startLanguage() {
 }
 startLanguage();
 
-/* ================= UPDATE ================= */
 
 function update(dt) {
-  if (!talk) npcClock += dt;                       // everybody freezes while a dialogue is open
+  if (!talk) npcClock += dt;
   updateGuide(dt);
-  // fade handling (input is frozen while fading)
   if (fade.state === "out") {
     fade.a += dt / FADE_TIME;
     if (fade.a >= 1) {
@@ -1003,12 +890,10 @@ function update(dt) {
     return;
   }
 
-  // dialogue open: Z / Enter advances it, she can't move
   if (talk) {
     talk.shown += dt * 40;
     const len = talk.lines[talk.i].length, ok = pressed.z || pressed.enter;
     if (talk.choice && talk.i === talk.lines.length - 1 && talk.shown >= len) {
-      // Yes / No: left-right (or up-down) to pick, Z to confirm
       const c = talk.choice, n = c.opts.length;
       if (pressed.arrowleft || pressed.a || pressed.arrowup || pressed.w) c.sel = (c.sel + n - 1) % n;
       if (pressed.arrowright || pressed.d || pressed.arrowdown || pressed.s) c.sel = (c.sel + 1) % n;
@@ -1022,9 +907,7 @@ function update(dt) {
     updateCamera();
     return;
   }
-  // cutscene: she can't move until the guide has finished talking
   if (lockInput) { player.moving = false; player.t = 0; updateCamera(); return; }
-  // inventory
   if (invOpen) {
     const n = invItems().length;
     if (pressed.x || pressed.escape) invOpen = false;
@@ -1047,21 +930,17 @@ function update(dt) {
     const mx = (dx / len) * SPEED * dt;
     const my = (dy / len) * SPEED * dt;
 
-    // move each axis separately so she slides along walls
     if (mx && canStand(player.x + mx, player.y)) { player.x += mx; player.moving = true; }
     if (my && canStand(player.x, player.y + my)) { player.y += my; player.moving = true; }
 
-    // facing direction (horizontal wins when moving diagonally)
     if (dx)      player.dir = dx < 0 ? "left" : "right";
     else if (dy) player.dir = dy < 0 ? "up" : "down";
   }
 
   player.t = player.moving ? player.t + dt : 0;
 
-  // first time she walks into the main hall of the school: the guide comes to meet her
   if (!guide.met && cur === LOCATIONS.school && player.y <= GUIDE.triggerY) { startIntro(); updateCamera(); return; }
 
-  // stepping into an exit zone starts the transition
   const fx = player.x, fy = player.y - FEET_H / 2;
   for (const ex of cur.exits) {
     if (fx >= ex.x1 && fx <= ex.x2 && fy >= ex.y1 && fy <= ex.y2 && !(ex.battle && bossDefeated)) {
@@ -1074,11 +953,9 @@ function update(dt) {
   updateCamera();
 }
 
-// "fit" = scale so the whole background fits on screen; a number = fixed zoom
-const VIEW_MIN_W = 3000, VIEW_MIN_H = 1400;   // world pixels that must always be visible (matches a laptop at zoom 0.5)
+const VIEW_MIN_W = 3000, VIEW_MIN_H = 1400;
 function zoomOf(loc) {
   if (loc.zoom === "fit") return Math.min(canvas.width / loc.w, canvas.height / loc.h);
-  // fixed zoom, but on small screens (phones) zoom out so you see at least the same part of the map as on a laptop
   return Math.min(loc.zoom, canvas.width / VIEW_MIN_W, canvas.height / VIEW_MIN_H);
 }
 
@@ -1086,12 +963,10 @@ function updateCamera() {
   const z = zoomOf(cur);
   const viewW = canvas.width / z, viewH = canvas.height / z;
   const cx = player.x, cy = player.y - cur.spriteH / 2;
-  // follow her, clamped to the background; centered if the background is smaller than the screen
   camX = viewW >= cur.w ? (cur.w - viewW) / 2 : Math.max(0, Math.min(cur.w - viewW, cx - viewW / 2));
   camY = viewH >= cur.h ? (cur.h - viewH) / 2 : Math.max(0, Math.min(cur.h - viewH, cy - viewH / 2));
 }
 
-/* ================= DRAW ================= */
 
 function drawBand(img, b) {
   const sx = img.width / cur.w, sy = img.height / cur.h;
@@ -1124,13 +999,13 @@ function drawDebug() {
   ctx.strokeStyle = "rgba(255,60,60,.9)";
   for (const o of cur.blockers) ctx.strokeRect(o.x1, o.y1, o.x2 - o.x1, o.y2 - o.y1);
   for (const n of cur.npcs || []) { const o = npcBox(n); ctx.strokeRect(o.x1, o.y1, o.x2 - o.x1, o.y2 - o.y1); }
-  for (const sl of cur.slants || []) {                          // 45-degree borders
+  for (const sl of cur.slants || []) {
     ctx.beginPath(); ctx.moveTo(sl.x1, sl.sum - sl.x1); ctx.lineTo(sl.x2, sl.sum - sl.x2); ctx.stroke();
   }
-  ctx.strokeStyle = "rgba(200,80,255,.95)";                  // behind-zones
+  ctx.strokeStyle = "rgba(200,80,255,.95)";
   for (const ov of cur.overlays || []) for (const b of ov.bands)
     if (b.zone) ctx.strokeRect(b.zone.x1, b.zone.y1, b.zone.x2 - b.zone.x1, b.zone.y2 - b.zone.y1);
-  ctx.strokeStyle = "rgba(255,160,0,.95)";                   // interaction areas
+  ctx.strokeStyle = "rgba(255,160,0,.95)";
   for (const o of cur.interact || []) ctx.strokeRect(o.x1, o.y1, o.x2 - o.x1, o.y2 - o.y1);
   ctx.strokeStyle = "yellow";
   ctx.strokeRect(player.x - FEET_W / 2, player.y - FEET_H, FEET_W, FEET_H);
@@ -1160,7 +1035,6 @@ function drawInventory() {
   ctx.fillText(L("X: close", "X：关闭"), bx + 24 * s, by + bh - 28 * s);
 }
 
-// Undertale-style dialogue box at the BOTTOM of the screen
 function drawDialogue() {
   const W = canvas.width, H = canvas.height, s = Math.min(W / 640, H / 480);
   const lastPage = talk.i === talk.lines.length - 1, vert = !!(talk.choice && talk.choice.vertical && lastPage);
@@ -1172,7 +1046,7 @@ function drawDialogue() {
   ctx.font = `${26 * s}px DeterminationMono, ZLabsPixel, 'Courier New', monospace`;
   ctx.textBaseline = "top"; ctx.textAlign = "left";
   const full = talk.lines[talk.i];
-  const rtl = /[\u0600-\u06ff]/.test(full), mainFont = ctx.font;     // Persian lines: Radio-Fill font, right to left
+  const rtl = /[\u0600-\u06ff]/.test(full), mainFont = ctx.font;
   if (rtl) { ctx.font = `${24 * s}px ${INV_FONT}`; ctx.direction = "rtl"; ctx.textAlign = "right"; }
   full.slice(0, talk.shown | 0).split("\n")
     .forEach((l, i) => ctx.fillText(l, rtl ? bx + bw - 20 * s : bx + 20 * s, by + 20 * s + i * 32 * s));
@@ -1198,14 +1072,11 @@ function draw() {
   if (cur.bg.ready) {
     ctx.drawImage(cur.bg, 0, 0, cur.w, cur.h);
   } else {
-    // placeholder if the background isn't found: show the walkable areas as gray blocks
     ctx.fillStyle = "#222"; ctx.fillRect(0, 0, cur.w, cur.h);
     ctx.fillStyle = "#555";
     for (const r of walkAreas()) ctx.fillRect(r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1);
   }
 
-  // overlay bands (objects): a band is drawn OVER whoever stands inside its zone (feet Y = behind it),
-  // otherwise UNDER everybody. This works for her and for the standing characters (npcs).
   const bandsList = [];
   for (const ov of cur.overlays || []) {
     if (!ov.img || !ov.img.ready) continue;
@@ -1217,12 +1088,10 @@ function draw() {
   for (const e of bandsList) {
     if (!actors.some(a => inZone(e, a.y))) { drawBand(e.img, e.b); e.done = true; }
   }
-  // characters + her, sorted by feet Y so whoever is lower on the screen is drawn in front
   if ((guide.mode === "scripted" || guide.mode === "follow") && guide.loc === locName()) actors.push({ y: guide.y, draw: drawGuide });
   actors.sort((a, b) => a.y - b.y);
   actors.forEach((a, i) => {
     a.draw();
-    // draw a band after the LAST actor (lowest on screen) standing in its zone, so all of them are behind it
     for (const e of bandsList) {
       if (e.done || !inZone(e, a.y)) continue;
       if (!actors.slice(i + 1).some(o => inZone(e, o.y))) { drawBand(e.img, e.b); e.done = true; }
@@ -1244,16 +1113,12 @@ function draw() {
   }
 }
 
-/* ================= BOSS FIGHT =================
-   To start it from a door, add an exit to any location:
-   { x1, y1, x2, y2, battle: true, spawn: { x, y, dir } }
-   (spawn = where she stands after the fight) */
 const BOSS = {
   name: "BOOK",
   image: "book.png",
-  h: 220,                 // drawn height on the battle screen
-  hp: 120,                // boss HP
-  atk: 4,                 // damage per bullet hit (she has 20 HP)
+  h: 220,
+  hp: 120,
+  atk: 4,
   encounter: "* Book blocks the way!",
   check: "* BOOK - ATK 4 DEF 0\n* Its pages are full of secrets.",
   talk: "* You read a page out loud.\n* Book seems calmer.",
@@ -1357,7 +1222,7 @@ function heart(x, y, s, c) {
   ctx.bezierCurveTo(x + s * 0.5, y - s * 0.6, x + s * 1.2, y + s * 0.1, x, y + s * 0.9); ctx.fill();
 }
 
-function subLabel(o) {   // sub-menu labels are English inside the code; this is only what is shown
+function subLabel(o) {
   return LANG !== "zh" ? o : ({ Check: "查看", Talk: "交谈", Spare: "饶恕" }[o] ?? o.replace("Bandage", "绷带"));
 }
 function drawBattle() {
@@ -1367,19 +1232,19 @@ function drawBattle() {
   ctx.font = "26px DeterminationMono, ZLabsPixel, 'Courier New', monospace"; ctx.textBaseline = "top"; ctx.textAlign = "left";
   const ph = B.phase, dodge = ph === "dodge";
 
-  if (!B.won) {                                           // boss
+  if (!B.won) {
     const h = BOSS.h, w = bossImg.ready ? h * bossImg.width / bossImg.height : h;
     const sx = ph === "hit" ? Math.sin(B.t * 60) * 8 * Math.min(1, B.timer) : 0, y = 30 + Math.sin(B.t * 2) * 6;
     if (bossImg.ready) ctx.drawImage(bossImg, 320 - w / 2 + sx, y, w, h);
     else { ctx.fillStyle = "#fff"; ctx.fillRect(320 - w / 2, y, w, h); }
   }
-  if (ph === "hit") {                                     // boss hp + damage number
+  if (ph === "hit") {
     ctx.fillStyle = "#555"; ctx.fillRect(220, 8, 200, 14);
     ctx.fillStyle = "#0f0"; ctx.fillRect(220, 8, 200 * B.bhp / BOSS.hp, 14);
     ctx.fillStyle = "#f33"; ctx.textAlign = "center"; ctx.fillText(B.dmg ? B.dmg : "MISS", 320, 40); ctx.textAlign = "left";
   }
 
-  const bx = dodge ? 220 : 32, bw = dodge ? 200 : 576;    // main box
+  const bx = dodge ? 220 : 32, bw = dodge ? 200 : 576;
   ctx.fillStyle = "#000"; ctx.fillRect(bx, 260, bw, 130);
   ctx.strokeStyle = "#fff"; ctx.lineWidth = 5; ctx.strokeRect(bx, 260, bw, 130);
   ctx.fillStyle = "#fff";
@@ -1398,11 +1263,11 @@ function drawBattle() {
     if (B.inv <= 0 || ((B.t * 20) | 0) % 2) heart(B.hx, B.hy, 10, "#f00");
   }
 
-  ctx.fillStyle = "#fff"; ctx.fillText("CHARA  LV 1", 32, 398); ctx.fillText("HP", 300, 398);   // stats
+  ctx.fillStyle = "#fff"; ctx.fillText("CHARA  LV 1", 32, 398); ctx.fillText("HP", 300, 398);
   ctx.fillStyle = "#c00"; ctx.fillRect(345, 398, 100, 22);
   ctx.fillStyle = "#ff0"; ctx.fillRect(345, 398, 100 * Math.max(0, B.php) / PMAX, 22);
   ctx.fillStyle = "#fff"; ctx.fillText(Math.max(0, B.php) + " / " + PMAX, 460, 398);
-  L(["FIGHT", "ACT", "ITEM", "MERCY"], ["战斗", "行动", "物品", "饶恕"]).forEach((n, i) => {                                        // buttons
+  L(["FIGHT", "ACT", "ITEM", "MERCY"], ["战斗", "行动", "物品", "饶恕"]).forEach((n, i) => {
     const x = 32 + i * 150, on = ph === "menu" && B.sel === i;
     ctx.strokeStyle = ctx.fillStyle = on ? "#ff0" : "#f80"; ctx.lineWidth = 4;
     ctx.strokeRect(x, 435, 125, 40); ctx.fillText(n, x + 30, 442);
@@ -1415,14 +1280,14 @@ function drawBattle() {
 let CREDITS = [
   "#Code", "扎因 Zeinab Ghalavand (Amoo)", "",
   "#Art and design", "蓝灵 Hadis Kamali Arya (Khale)", "扎因 Zeinab Ghalavand (Amoo)", "",
-  "#Writing", "沈笑娴 Tabassom Alikhani (Toranj)", "英春伶 Bahar KhodaBakhsh (Lamine)", "佳馨雅 Maryam AhmadNejad (Xinberry)", "",
+  "#Writing", "沈笑娴 Tabassom Alikhani (Toranj)", "扎因 Zeinab Ghalavand (Amoo)", "英春伶 Bahar KhodaBakhsh (Lamine)", "佳馨雅 Maryam AhmadNejad (Xinberry)", "",
   "#Translation", "米怡人 Sarvin Ghaemi (Malake)", "沈笑娴 Tabassom Alikhani (Toranj)", "扎因 Zeinab Ghalavand (Amoo)", "",
   "#With guidance of", "谢夏珩 博士 Dr. Xie Xiaheng",
 ];
 const CREDITS_ZH = [
   "#代码", "扎因 Zeinab Ghalavand (Amoo)", "",
   "#美术与设计", "蓝灵 Hadis Kamali Arya (Khale)", "扎因 Zeinab Ghalavand (Amoo)", "",
-  "#文案", "沈笑娴 Tabassom Alikhani (Toranj)", "英春伶 Bahar KhodaBakhsh (Lamine)", "佳馨雅 Maryam AhmadNejad (Xinberry)", "",
+  "#文案", "沈笑娴 Tabassom Alikhani (Toranj)", "扎因 Zeinab Ghalavand (Amoo)", "英春伶 Bahar KhodaBakhsh (Lamine)", "佳馨雅 Maryam AhmadNejad (Xinberry)", "",
   "#翻译", "米怡人 Sarvin Ghaemi (Malake)", "沈笑娴 Tabassom Alikhani (Toranj)", "扎因 Zeinab Ghalavand (Amoo)", "",
   "#指导老师", "谢夏珩 博士 Dr. Xie Xiaheng",
 ];
@@ -1447,13 +1312,13 @@ function drawEnd(dt) {
     }
     endLines.forEach((t, i) => ctx.fillText(t, W / 2, H * 0.3 + i * 32 * s));
     ctx.globalAlpha = 1;
-    if (endT > 3) {                                        // after a moment: Z for the credits
+    if (endT > 3) {
       ctx.fillStyle = "#888"; ctx.font = font(18);
       ctx.fillText(touchOn ? L("tap Z for credits", "点按 Z 查看制作名单") : L("press Z for credits", "按 Z 键查看制作名单"), W / 2, H * 0.93);
       if (pressed.z || pressed.enter) { endPhase = 1; credY = H + 20 * s; }
     }
   } else {
-    credY -= 45 * s * dt;                                  // scroll up, stop when the last line is in the middle
+    credY -= 45 * s * dt;
     const lineH = 34 * s, lastY = credY + (CREDITS.length - 1) * lineH;
     if (lastY < H * 0.55) credY += (H * 0.55 - lastY);
     ctx.font = font(22);
@@ -1466,7 +1331,6 @@ function drawEnd(dt) {
   }
 }
 
-/* ================= MUSIC ================= */
 
 const tracks = {};
 for (const [k, src] of Object.entries(MUSIC)) {
@@ -1476,7 +1340,6 @@ for (const [k, src] of Object.entries(MUSIC)) {
   a.onerror = () => console.warn("Could not load music:", src);
   tracks[k] = a;
 }
-// browsers only allow sound after the first key press / click
 let musicOn = false, wantTrack = null;
 addEventListener("keydown", () => (musicOn = true));
 addEventListener("pointerdown", () => (musicOn = true));
@@ -1487,7 +1350,6 @@ function updateMusic(dt) {
              : Object.keys(LOCATIONS).find(k => LOCATIONS[k] === cur);
   if (want !== wantTrack) {
     wantTrack = want;
-    // boss and ending songs always start from the beginning; room songs resume where they stopped
     if (tracks[want] && (want === "boss" || want === "end")) tracks[want].currentTime = 0;
   }
   const step = MUSIC_VOLUME * dt / MUSIC_FADE;
@@ -1503,7 +1365,6 @@ function updateMusic(dt) {
   }
 }
 
-/* ================= LOOP ================= */
 
 let last = performance.now();
 function loop(now) {
